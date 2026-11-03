@@ -6,6 +6,7 @@ import {
 } from './config.js';
 import { fetchHtml, parseSearchPage, parseDetailPage, mergeListing, BlockedError } from './otomoto.js';
 import { fetchOlx, parseOlxResponse } from './olx.js';
+import { SPRZ_SEARCHES, sprzUrl, parseSprzSearch, parseSprzDetail } from './sprzedajemy.js';
 import { analyze, detectKind, detectMake } from './analyze.js';
 import { formatMessage, sendTelegram } from './telegram.js';
 import { loadState, saveState, getSeen } from './state.js';
@@ -22,6 +23,7 @@ const tg = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms + Math.floor(Math.random() * 1000)));
 const PRIORITY = { HOT: 0, CAUTION: 1, LOOK: 2, SKIP: 9 };
 const HOUR = 3600 * 1000;
+const SOURCE_NAMES = { otomoto: 'Otomoto', olx: 'OLX', sprzedajemy: 'Sprzedajemy.pl' };
 
 // ---- Режим перевірки парсера на збереженій сторінці ----
 async function parseFileMode(path, isDetail) {
@@ -95,15 +97,35 @@ async function collect(stats) {
         for (const l of found) if (!all.has(l.id)) all.set(l.id, l);
         if (found.length < OLX.limit / 2) break;
       } catch (e) {
-        stats.errors++;
-        console.error(`[OLX] помилка: ${e.message}`);
+        // OLX часто блокує сервери GitHub — це не поломка бота, просто пропускаємо
+        if (e instanceof BlockedError) stats.olxBlocked = (stats.olxBlocked || 0) + 1;
+        else stats.errors++;
+        console.error(`[OLX] ${e.message}`);
         break;
       }
       await sleep(REQUEST_DELAY_MS);
     }
   }
+  for (const s of SPRZ_SEARCHES) {
+    try {
+      const found = parseSprzSearch(await fetchHtml(sprzUrl(s)));
+      console.log(`[${s.name}] знайдено: ${found.length}`);
+      if (found.length) ok++;
+      for (const l of found) if (!all.has(l.id)) all.set(l.id, l);
+    } catch (e) {
+      stats.errors++;
+      console.error(`[${s.name}] помилка: ${e.message}`);
+    }
+    await sleep(REQUEST_DELAY_MS);
+  }
   return { all, ok, blocked };
 }
+
+// Детальна сторінка оголошення (OLX віддає все одразу, тож для нього не потрібно)
+const DETAIL = {
+  otomoto: (html, url) => parseDetailPage(html, url),
+  sprzedajemy: (html, url) => parseSprzDetail(html, url),
+};
 
 async function main() {
   const i = process.argv.indexOf('--parse-file');
@@ -170,15 +192,15 @@ async function main() {
   // ---- аналіз ----
   const results = [];
   let detailFetches = 0;
-  const detailLimit = testRun ? 40 : MAX_DETAIL_FETCHES;
+  const detailLimit = testRun ? 70 : MAX_DETAIL_FETCHES;
   for (const c of candidates) {
     let listing = c.l;
     let a = listing.partial ? null : analyze(listing, { live: liveFor(state, listing) });
-    // Детальна сторінка Otomoto — лише для кандидатів (OLX і так віддає опис)
-    if (c.src === 'otomoto' && (!a || a.verdict !== 'SKIP') && detailFetches < detailLimit) {
+    const needDetail = DETAIL[c.src] && (!a || a.verdict !== 'SKIP');
+    if (needDetail && detailFetches < detailLimit) {
       try {
         detailFetches++;
-        const detail = parseDetailPage(await fetchHtml(listing.url), listing.url);
+        const detail = DETAIL[c.src](await fetchHtml(listing.url), listing.url);
         listing = mergeListing(listing, detail);
         a = analyze(listing, { live: liveFor(state, listing) });
       } catch (e) {
@@ -186,19 +208,28 @@ async function main() {
         if (e instanceof BlockedError) break;
       }
       await sleep(REQUEST_DELAY_MS);
-    } else if (c.src === 'otomoto' && a && a.verdict !== 'SKIP') {
-      continue; // ліміт детальних сторінок — розберемо наступного запуску
+    } else if (needDetail) {
+      // ліміт сторінок за запуск. Для нового джерела — просто запамʼятовуємо (старі оголошення не шлемо),
+      // інакше розберемо наступного запуску.
+      if (firstSources.has(c.src)) state.seen[listing.id] = { t: now, ls: now, price: listing.price, v: 'init' };
+      continue;
     }
     if (!a) continue;
 
     const prev = getSeen(state, listing.id);
     state.seen[listing.id] = { t: prev?.t || now, ls: now, price: listing.price, v: a.verdict, sent: prev?.sent || false };
     const fp = fingerprint(listing);
+    // Повтор, який видно лише після детальної сторінки (рік/пробіг/VIN)
+    const twin2 = fp && state.fps[fp];
+    if (!testRun && !c.drop && twin2 && twin2.key !== listing.id) {
+      if (listing.price && twin2.price && listing.price < twin2.price) c.drop = { oldPrice: twin2.price, relisted: true };
+      else { state.seen[listing.id].dup = twin2.key; stats.dupes++; continue; }
+    }
     if (fp) state.fps[fp] = { key: listing.id, price: listing.price, t: now };
 
     if (!c.drop) {
       stats.checked++;
-      stats[c.src === 'olx' ? 'olx' : 'otomoto']++;
+      stats[c.src] = (stats[c.src] || 0) + 1;
       if (a.verdict === 'SKIP') {
         stats.skipped++;
         for (const code of a.skipCodes || []) stats.reasons[code] = (stats.reasons[code] || 0) + 1;
@@ -216,13 +247,14 @@ async function main() {
   if (testRun) {
     toSend = results.filter(wanted).sort(byScore).slice(0, 5);
     const skipped = results.filter(({ a }) => a.verdict === 'SKIP').length;
-    intro.push(`🧪 Тест фільтрів. Перевірено: ${results.length} (Otomoto ${results.filter((r) => r.c.src === 'otomoto').length}, OLX ${results.filter((r) => r.c.src === 'olx').length}), відсіяно: ${skipped}. Нижче — до 5 найкращих.`);
+    const bySrc = (src) => results.filter((r) => r.c.src === src).length;
+    intro.push(`🧪 Тест фільтрів. Перевірено: ${results.length} (Otomoto ${bySrc('otomoto')}, OLX ${bySrc('olx')}, Sprzedajemy ${bySrc('sprzedajemy')}), відсіяно: ${skipped}. Нижче — до 5 найкращих.`);
   } else {
     toSend = results.filter((r) => !firstSources.has(r.c.src) && wanted(r)).sort(byScore);
     for (const src of firstSources) {
       const best = results.filter((r) => r.c.src === src && wanted(r)).sort(byScore).slice(0, 3);
       const n = results.filter((r) => r.c.src === src).length;
-      intro.push(`🤖 ${src === 'olx' ? 'OLX' : 'Otomoto'} підключено: зараз ${n} оголошень за фільтрами. Нижче — до 3 найкращих, далі писатиму лише про нові та подешевшалі.`);
+      intro.push(`🤖 ${SOURCE_NAMES[src] || src} підключено: зараз ${n} оголошень за фільтрами. Нижче — до 3 найкращих, далі писатиму лише про нові та подешевшалі.`);
       toSend.push(...best);
     }
   }

@@ -18,7 +18,7 @@ export function localNow(date = new Date()) {
 }
 
 export function emptyStats() {
-  return { runs: 0, otomoto: 0, olx: 0, checked: 0, sent: 0, hot: 0, look: 0, drops: 0, dupes: 0, skipped: 0, errors: 0, reasons: {} };
+  return { runs: 0, otomoto: 0, olx: 0, sprzedajemy: 0, olxBlocked: 0, checked: 0, sent: 0, hot: 0, look: 0, drops: 0, dupes: 0, skipped: 0, errors: 0, reasons: {} };
 }
 
 export function dayStats(state, day) {
@@ -41,11 +41,12 @@ function sumStats(list) {
 
 function body(s) {
   const lines = [
-    `Нових оголошень перевірено: ${s.checked} (Otomoto ${s.otomoto}, OLX ${s.olx})`,
+    `Нових оголошень перевірено: ${s.checked} (Otomoto ${s.otomoto}, OLX ${s.olx}, Sprzedajemy ${s.sprzedajemy})`,
     `Надіслано: ${s.sent} (🔥 ${s.hot}, 👀 ${s.look}) · знижень ціни: ${s.drops} · повторів відсіяно: ${s.dupes}`,
   ];
   if (s.skipped) lines.push(`Відсіяно: ${s.skipped} — ${reasonsLine(s.reasons)}`);
   if (s.errors) lines.push(`⚠️ Помилок завантаження: ${s.errors}`);
+  if (s.olxBlocked && !s.olx) lines.push('ℹ️ OLX не пускає сервери GitHub — частину оголошень з OLX бот бачить через Otomoto.');
   return lines;
 }
 
