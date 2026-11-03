@@ -11,6 +11,10 @@ on:
         description: 'Тест: надіслати 5 найкращих з поточних оголошень'
         type: boolean
         default: false
+      debug:
+        description: 'Діагностика (нічого не надсилає)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write         # щоб зберігати data/state.json (памʼять бота)
@@ -41,7 +45,7 @@ jobs:
           # Необовʼязково: якщо задати — відстань рахуватиме Google Maps
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           TEST_TOP: ${{ inputs.test && '1' || '' }}
-        run: node src/index.js
+        run: if [ "${{ inputs.debug }}" = "true" ]; then node src/debug.js; else node src/index.js; fi
 
       - name: Зберігаємо памʼять бота
         run: |
