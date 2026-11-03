@@ -41,44 +41,35 @@ async function otomoto() {
 }
 
 async function olx() {
-  const urls = [
-    'https://www.olx.pl/api/v1/offers/?offset=0&limit=5&category_id=84&query=toyota%20prius',
+  const tries = [
+    'https://www.olx.pl/motoryzacja/samochody/toyota/',
     'https://www.olx.pl/motoryzacja/samochody/toyota/prius/',
+    'https://www.olx.pl/motoryzacja/samochody/q-toyota-auris/',
+    'https://www.olx.pl/api/v1/offers/?offset=0&limit=5&category_id=84',
   ];
-  for (const u of urls) {
-    const r = await fetch(u, { headers: { ...H, Referer: 'https://www.olx.pl/' } });
-    const t = await r.text();
-    console.log(`OLX ${u} -> ${r.status}, len ${t.length}, prerendered=${t.includes('__PRERENDERED_STATE__')}, nextdata=${t.includes('__NEXT_DATA__')}`);
-    if (r.status !== 200) { console.log(short(t, 300)); continue; }
-    if (u.includes('/api/')) { const j = JSON.parse(t); console.log(short(j.data?.[0], 2500)); continue; }
-    const m = t.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/);
-    if (m) {
-      const state = JSON.parse(JSON.parse(m[1]));
-      console.log('state keys:', Object.keys(state).join(','));
-      const ads = state.listing?.listing?.ads || [];
-      console.log('ads:', ads.length);
-      if (ads[0]) console.log('ad0:', short({ ...ads[0], description: short(ads[0].description, 80) }, 3000));
-      console.log('petrol filter:', findKeys(state, /petrol/i).slice(0, 10).join('\n'));
+  for (const u of tries) {
+    for (let k = 0; k < 3; k++) {
+      const r = await fetch(u, { headers: { ...H, 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'none', 'Upgrade-Insecure-Requests': '1' } });
+      const t = await r.text();
+      console.log(`OLX ${u} try${k} -> ${r.status} len ${t.length} cf=${r.headers.get('x-cache')}`);
+      if (r.status === 200) {
+        const m = t.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/);
+        if (m) {
+          const st = JSON.parse(JSON.parse(m[1]));
+          const ads = st.listing?.listing?.ads || [];
+          console.log('  ads', ads.length, 'total', st.listing?.listing?.totalElements, 'keys', Object.keys(st).join(','));
+          if (ads[0]) console.log('  ad0', short({ ...ads[0], description: short(ads[0].description, 60) }, 2500));
+          const vals = {};
+          for (const a of ads) for (const p of a.params || []) { (vals[p.key] ??= new Set()).add(`${p.normalizedValue}|${p.value}`); }
+          for (const [k, v] of Object.entries(vals)) console.log(`  P ${k}: ${short([...v].join(' ; '), 300)}`);
+          console.log('  petrol keys:', findKeys(st, /petrol/i).slice(0, 8).join('\n   '));
+        } else if (u.includes('/api/')) console.log('  ', short(t, 1500));
+        break;
+      }
+      await new Promise((res) => setTimeout(res, 4000));
     }
-    const fuel = t.match(/.{0,200}(CNG i hybryd|Hybryda|hybrid).{0,200}/gi) || [];
-    console.log('fuel snippets:', fuel.slice(0, 3).map((s) => short(s, 400)).join('\n---\n'));
-  }
-  // спроба з фільтром
-  for (const f of ['hybrid', 'cng-and-hybrid', 'hybryda', 'cng']) {
-    const u = `https://www.olx.pl/motoryzacja/samochody/toyota/?search%5Bfilter_enum_petrol%5D%5B0%5D=${f}`;
-    const r = await fetch(u, { headers: H });
-    const t = await r.text();
-    const m = t.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/);
-    let n = '?', petrols = '';
-    if (m) {
-      const st = JSON.parse(JSON.parse(m[1]));
-      const ads = st.listing?.listing?.ads || [];
-      n = `${ads.length} total=${st.listing?.listing?.totalElements}`;
-      petrols = ads.slice(0, 6).map((a) => a.params?.find((p) => p.key === 'petrol')?.normalizedValue || a.params?.find((p) => p.key === 'petrol')?.value).join(',');
-    }
-    console.log(`FILTER ${f}: ${r.status} ads=${n} petrol=${petrols}`);
+    await new Promise((res) => setTimeout(res, 3000));
   }
 }
 
-await otomoto().catch((e) => console.log('otomoto error', e.message));
 await olx().catch((e) => console.log('olx error', e.stack));
