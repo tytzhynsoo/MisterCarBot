@@ -37,7 +37,9 @@ async function main() {
   if (i !== -1) return parseFileMode(process.argv[i + 1], process.argv.includes('--detail'));
 
   const state = await loadState(STATE_PATH);
-  const firstRun = Object.keys(state.seen).length === 0;
+  // Тестовий режим: ігноруємо памʼять і шлемо 5 найкращих з поточних оголошень
+  const testRun = process.env.TEST_TOP === '1';
+  const firstRun = testRun || Object.keys(state.seen).length === 0;
   const all = new Map();
   let blocked = false;
   let okSearches = 0;
@@ -73,7 +75,8 @@ async function main() {
     return;
   }
 
-  const fresh = [...all.values()].filter((l) => !state.seen[l.id]);
+  const fresh = [...all.values()].filter((l) => testRun || !state.seen[l.id]);
+  const detailLimit = testRun ? 40 : MAX_DETAIL_FETCHES;
   console.log(`Нових оголошень: ${fresh.length}${firstRun ? ' (перший запуск)' : ''}`);
 
   const results = [];
@@ -82,7 +85,7 @@ async function main() {
     let listing = l;
     let a = l.partial ? null : analyze(l);
     // Детальну сторінку відкриваємо лише для кандидатів (економимо запити)
-    if ((!a || a.verdict !== 'SKIP') && detailFetches < MAX_DETAIL_FETCHES) {
+    if ((!a || a.verdict !== 'SKIP') && detailFetches < detailLimit) {
       try {
         detailFetches++;
         const detail = parseDetailPage(await fetchHtml(l.url), l.url);
@@ -100,13 +103,17 @@ async function main() {
   }
 
   let toSend = results
-    .filter(({ a }) => a.verdict === 'HOT' || (a.verdict === 'CAUTION' && NOTIFY_CAUTION) || (a.verdict === 'LOOK' && NOTIFY_LOOK && !firstRun))
+    .filter(({ a }) => a.verdict === 'HOT' || (a.verdict === 'CAUTION' && NOTIFY_CAUTION) || (a.verdict === 'LOOK' && NOTIFY_LOOK && (testRun || !firstRun)))
     .sort((x, y) => PRIORITY[x.a.verdict] - PRIORITY[y.a.verdict] || y.a.score - x.a.score);
 
   if (firstRun) {
     toSend = toSend.slice(0, 5);
+    const skipped = results.filter(({ a }) => a.verdict === 'SKIP').length;
     await sendTelegram(
-      `🤖 Бот запущено. Зараз на Otomoto за фільтрами: ${all.size} оголошень. ` +
+      testRun
+        ? `🧪 Тест нових фільтрів. Перевірено оголошень: ${results.length}, відсіяно: ${skipped}. ` +
+            `Нижче — до 5 найкращих з тих, що пройшли.`
+        : `🤖 Бот запущено. Зараз на Otomoto за фільтрами: ${all.size} оголошень. ` +
         `Нижче — найкращі з них (до 5). Далі писатиму лише про нові.`,
       tg,
     );

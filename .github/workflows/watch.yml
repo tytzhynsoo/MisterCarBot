@@ -5,7 +5,12 @@ on:
     # Кожні 15 хвилин (час UTC). GitHub може запускати із запізненням на кілька хвилин.
     # Для ПРИВАТНОГО репозиторію постав '*/30 * * * *', щоб вкластися в безкоштовний ліміт.
     - cron: '*/15 * * * *'
-  workflow_dispatch: {}   # кнопка "Run workflow" для ручного запуску
+  workflow_dispatch:      # кнопка "Run workflow" для ручного запуску
+    inputs:
+      test:
+        description: 'Тест: надіслати 5 найкращих з поточних оголошень'
+        type: boolean
+        default: false
 
 permissions:
   contents: write         # щоб зберігати data/state.json (памʼять бота)
@@ -35,6 +40,7 @@ jobs:
           HOME_LON: ${{ secrets.HOME_LON }}
           # Необовʼязково: якщо задати — відстань рахуватиме Google Maps
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          TEST_TOP: ${{ inputs.test && '1' || '' }}
         run: node src/index.js
 
       - name: Зберігаємо памʼять бота
