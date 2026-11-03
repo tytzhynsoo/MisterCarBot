@@ -1,31 +1,11 @@
-// Fiat Tipo 1.6 E.torQ з автоматом: усі оголошення до 42 тис.
-import { fetchHtml, parseSearchPage, extractNextData, collectParams, stripHtml } from './otomoto.js';
-const seen = new Set();
-for (const fuel of ['petrol', 'petrol-lpg']) {
-  for (const page of [1, 2]) {
-    const p = new URLSearchParams({ 'search[filter_enum_gearbox]': 'automatic', 'search[filter_enum_fuel_type]': fuel, 'search[filter_float_price:to]': '42000', 'search[order]': 'filter_float_price:asc' });
-    if (page > 1) p.set('page', '2');
-    let list = [];
-    try { list = parseSearchPage(await fetchHtml(`https://www.otomoto.pl/osobowe/fiat/tipo?${p}`)); } catch (e) { console.log('TIPO ERR', e.message); }
-    console.log(`TIPO == ${fuel} p${page}: ${list.length}`);
-    for (const l of list) {
-      if (seen.has(l.id)) continue; seen.add(l.id);
-      try {
-        const d = extractNextData(await fetchHtml(l.url));
-        const adv = d?.props?.pageProps?.advert || {};
-        const pr = collectParams(adv);
-        const g = (k) => pr[k]?.value ?? '';
-        const desc = stripHtml(adv.description || '').replace(/\s+/g, ' ');
-        console.log('TIPO ' + JSON.stringify({
-          url: l.url, price: l.price, year: g('year'), km: g('mileage'), hp: g('engine_power'), cc: g('engine_capacity'),
-          body: g('body_type'), fuel: g('fuel_type'), ver: g('version'), regPL: g('registered'), origin: g('country_origin'),
-          noAcc: g('no_accident'), aso: g('service_record'), first: g('original_owner'), seller: adv.seller?.type, loc: adv.seller?.location?.address,
-          photos: adv.images?.photos?.length, created: adv.createdAt, desc: desc.slice(0, 600),
-        }));
-      } catch (e) { console.log('TIPO ERR', l.url, e.message); }
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-    if (list.length < 30) break;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-}
+// Повні дані одного оголошення
+import { fetchHtml, extractNextData, collectParams, stripHtml } from './otomoto.js';
+const u = 'https://www.otomoto.pl/osobowe/oferta/toyota-auris-ID6Ihp3U.html';
+const d = extractNextData(await fetchHtml(u));
+const adv = d?.props?.pageProps?.advert || {};
+const p = collectParams(adv);
+console.log(`AD title=${adv.title} price=${JSON.stringify(adv.price)} status=${adv.status} created=${adv.createdAt} updated=${adv.updatedAt} photos=${adv.images?.photos?.length}`);
+console.log(`AD seller=${JSON.stringify({ type: adv.seller?.type, name: adv.seller?.name, loc: adv.seller?.location?.address, badges: (adv.seller?.featuresBadges || []).map((b) => b.label) })}`);
+console.log('AD params: ' + Object.entries(p).filter(([k]) => !/^(audio|comfort|electronics|performance|security|basic_information|technical_specs|condition_history|financial_information|ev_specs)$/.test(k)).map(([k, v]) => `${k}=${v.value}`).join(' | '));
+console.log('AD priceDrop: ' + JSON.stringify(adv.priceDrop) + ' ' + JSON.stringify(adv.advertPriceForPriceDrop));
+console.log('AD desc: ' + stripHtml(adv.description || '').replace(/\s+/g, ' '));
