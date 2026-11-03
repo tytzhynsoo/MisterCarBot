@@ -9,7 +9,24 @@ import {
   KEYWORDS,
   GOOD_HYBRID_MAKES,
   GEARBOX_WARNINGS,
+  TOTAL_BUDGET,
 } from './config.js';
+import { purchaseCost } from './costs.js';
+import { isNorthAmericanVin } from './vin.js';
+
+// Коди причин відсіювання — для щоденних звітів
+export const SKIP_LABELS = {
+  price: 'дорожче за ліміт',
+  mileage: 'завеликий пробіг',
+  year: 'занадто старі',
+  notHybrid: 'не гібрид',
+  manual: 'механіка',
+  damaged: 'пошкоджені',
+  rhd: 'правий кермо',
+  notInPL: 'ще не в Польщі',
+  fakeMileage: 'хитрий пробіг',
+  tooCheap: 'нереально дешеві',
+};
 
 export const VERDICT = {
   HOT: '🔥 ДЗВОНИ ВЖЕ',
@@ -28,7 +45,7 @@ const has = (text, words) =>
       : text.includes(w),
   );
 
-function detectMake(l) {
+export function detectMake(l) {
   if (l.make) return l.make;
   const t = `${l.title} ${l.url}`.toLowerCase();
   const known = ['toyota', 'lexus', 'kia', 'hyundai', 'honda', 'peugeot', 'citroen', 'ds', 'suzuki', 'renault', 'ford', 'mitsubishi', 'volvo', 'bmw', 'mercedes', 'audi', 'volkswagen', 'skoda', 'nissan', 'mazda', 'opel', 'fiat', 'jeep', 'porsche'];
@@ -64,9 +81,12 @@ export function referencePrice(kind, year, mileage) {
   return Math.round(base / 100) * 100;
 }
 
-function isHybrid(l, kind) {
+export function isHybrid(l, kind = detectKind(l)) {
   const f = `${l.fuel} ${l.fuelLabel}`.toLowerCase();
-  if (f.includes('hybrid') || f.includes('hybryd')) return true;
+  // OLX: "CNG i Hybryda" — одне значення для обох, тож перевіряємо назву/опис
+  const ambiguous = f.includes('cng');
+  if (!ambiguous && (f.includes('hybrid') || f.includes('hybryd'))) return true;
+  if (ambiguous && /hybrid|hybryd|\bhsd\b|\bhev\b|e:hev|full hybrid/i.test(`${l.title} ${l.description || ''}`)) return true;
   // Toyota/Lexus-гібриди з газом Otomoto показує як "Benzyna+LPG"
   const hybridKinds = ['auris_hatch', 'auris_ts', 'prius', 'prius_plus', 'lexus_ct'];
   if (hybridKinds.includes(kind)) {
@@ -79,67 +99,77 @@ function isHybrid(l, kind) {
   return false;
 }
 
-export function analyze(l) {
+// ctx.live — жива ринкова ціна { price, n } (рахує index.js з market.js)
+export function analyze(l, ctx = {}) {
   const pros = [];
   const cons = [];
   const skipReasons = [];
+  const skipCodes = [];
+  const skip = (code, text) => { skipCodes.push(code); skipReasons.push(text); };
   const kind = detectKind(l);
   const make = detectMake(l);
   const text = `${l.title}\n${l.description || ''}\n${l.shortDescription || ''}`.toLowerCase();
 
   // ---------- жорсткі фільтри ----------
-  if (l.price && l.price > BUDGET.maxPrice) skipReasons.push(`ціна ${l.price} > ${BUDGET.maxPrice}`);
-  if (l.mileage && l.mileage > BUDGET.maxMileage) skipReasons.push(`пробіг ${l.mileage} > ${BUDGET.maxMileage}`);
-  if (l.year && l.year < BUDGET.minYear) skipReasons.push(`рік ${l.year} < ${BUDGET.minYear}`);
-  if (!isHybrid(l, kind)) skipReasons.push('не гібрид');
-  if (/manual/.test(l.gearbox)) skipReasons.push('механіка');
-  if (l.damaged || has(text, KEYWORDS.damaged)) skipReasons.push('пошкоджена');
-  if (has(text, KEYWORDS.rhd)) skipReasons.push('правий кермо');
+  if (l.price && l.price > BUDGET.maxPrice) skip('price', `ціна ${l.price} > ${BUDGET.maxPrice}`);
+  if (l.mileage && l.mileage > BUDGET.maxMileage) skip('mileage', `пробіг ${l.mileage} > ${BUDGET.maxMileage}`);
+  if (l.year && l.year < BUDGET.minYear) skip('year', `рік ${l.year} < ${BUDGET.minYear}`);
+  if (!isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
+  if (/manual/.test(l.gearbox)) skip('manual', 'механіка');
+  if (l.damaged || has(text, KEYWORDS.damaged)) skip('damaged', 'пошкоджена');
+  if (l.rhd || has(text, KEYWORDS.rhd)) skip('rhd', 'правий кермо');
 
   // Машина ще не в Польщі: під пригон / у дорозі / лот з аукціону
-  if (has(text, KEYWORDS.notInPoland)) skipReasons.push('машина ще не в Польщі (під пригон / аукціон)');
+  if (has(text, KEYWORDS.notInPoland)) skip('notInPL', 'машина ще не в Польщі (під пригон / аукціон)');
 
   // Хитрість з пробігом: "842 km" замість 842 000 на машині кількарічної давності
   const age = l.year ? new Date().getFullYear() - l.year : null;
   if (l.mileage !== null && l.mileage !== undefined && age !== null && age >= 3) {
     if (l.mileage < 5000) {
       const real = l.mileage * 1000;
-      skipReasons.push(`пробіг ${l.mileage} км на авто ${l.year} р. — найімовірніше ${real.toLocaleString('uk-UA')} км`);
+      skip('fakeMileage', `пробіг ${l.mileage} км на авто ${l.year} р. — найімовірніше ${real.toLocaleString('uk-UA')} км`);
     }
   }
 
   // Модель без нашої ринкової таблиці (Camry, RAV4, C-HR…): новий гібрид за ≤42 тис. — майже напевно
   // побитий/з США. Відсіюємо, щоб не засмічував сповіщення.
   if (!REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
-    skipReasons.push(`занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
+    skip('tooCheap', `занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
   }
-  if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, pros, cons, score: 0 };
+  if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, skipCodes, pros, cons, score: 0 };
 
   let score = 0;
   let suspicious = false;
 
-  // ---------- ціна відносно ринку ----------
+  // ---------- ціна відносно ринку: таблиця + живі дані ----------
   const ref = referencePrice(kind, l.year, l.mileage);
+  const live = ctx.live || null;
+  // Для оцінки беремо живу ціну, якщо вона є; інакше — таблицю
+  const basis = live?.price || ref;
   let ratio = null;
-  if (ref && l.price) {
-    ratio = l.price / ref;
+  if (basis && l.price) {
+    ratio = l.price / basis;
     const pct = Math.round((ratio - 1) * 100);
+    const src = live?.price ? 'живий ринок' : 'ринок за таблицею';
     if (ratio <= 0.75) {
       suspicious = true;
-      cons.push(`Ціна на ${-pct}% нижча за ринок (~${fmt(ref)} zł) — можливе шахрайство або прихований дефект. Жодних передоплат!`);
+      cons.push(`Ціна на ${-pct}% нижча за ${src} (~${fmt(basis)} zł) — можливе шахрайство або прихований дефект. Жодних передоплат!`);
     } else if (ratio <= 0.9) {
       score += 2;
-      pros.push(`Ціна на ${-pct}% нижча за ринок (~${fmt(ref)} zł)`);
+      pros.push(`Ціна на ${-pct}% нижча за ${src}`);
     } else if (ratio <= 1.02) {
       score += 1;
-      pros.push(`Ціна в ринку (~${fmt(ref)} zł)`);
+      pros.push(`Ціна в ринку (${src})`);
     } else if (ratio > 1.1) {
       score -= 1;
-      cons.push(`Дорожче за ринок на ${pct}% (~${fmt(ref)} zł) — торгуйся`);
+      cons.push(`Дорожче за ${src} на ${pct}% — торгуйся`);
     }
   }
-  if (l.price && l.price > BUDGET.targetPrice) {
-    cons.push(`Понад бюджет ${fmt(BUDGET.targetPrice)} zł — потрібен торг`);
+
+  // ---------- повна сума покупки ----------
+  const cost = purchaseCost(l);
+  if (cost && cost.over > 0) {
+    cons.push(`Разом з усіма витратами ~${fmt(cost.total)} zł — на ${fmt(cost.over)} понад ${fmt(TOTAL_BUDGET)}. Торгуйся до ~${fmt(Math.floor((l.price - cost.over) / 100) * 100)} zł`);
   }
 
   // ---------- рік і пробіг ----------
@@ -177,7 +207,7 @@ export function analyze(l) {
   const descKnown = (l.description || '').length > 0;
   if (has(text, KEYWORDS.taxi)) { score -= 4; cons.push('Згадка про таксі/Uber/Bolt у тексті — перевір історію'); }
   const origin = `${l.origin || ''}`.toLowerCase();
-  if (/usa|stany|kanad|canada|united states/.test(origin) || has(text, KEYWORDS.usa)) {
+  if (/usa|stany|kanad|canada|united states/.test(origin) || has(text, KEYWORDS.usa) || isNorthAmericanVin(l.vin)) {
     score -= 2;
     cons.push('Імпорт зі США/Канади — часто з аукціонів після ДТП: обовʼязково Carfax/AutoCheck за VIN і товщиномір');
   }
@@ -208,10 +238,10 @@ export function analyze(l) {
   // ---------- вердикт ----------
   let verdict;
   if (suspicious) verdict = 'CAUTION';
-  else if (goodMake && !has(text, KEYWORDS.taxi) && score >= 4 && (!l.price || l.price <= BUDGET.targetPrice)) verdict = 'HOT';
+  else if (goodMake && !has(text, KEYWORDS.taxi) && score >= 4 && (!cost || cost.total <= TOTAL_BUDGET)) verdict = 'HOT';
   else verdict = 'LOOK';
 
-  return { verdict, kind, score, pros, cons, ref, ratio, skipReasons };
+  return { verdict, kind, score, pros, cons, ref, live, basis, ratio, cost, skipReasons, skipCodes };
 }
 
 export function fmt(n) {

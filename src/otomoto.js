@@ -1,4 +1,5 @@
 // Завантаження й розбір сторінок Otomoto.
+import { cleanVin, vinFromText, firstRegFromText } from './vin.js';
 // Otomoto — сайт на Next.js: дані оголошень лежать у JSON усередині
 // <script id="__NEXT_DATA__">. Структура може змінюватися, тому парсер
 // шукає оголошення "універсально" — за ознаками, а не за точним шляхом.
@@ -172,7 +173,24 @@ export function normalizeListing(raw) {
     null;
   const region = raw.location?.region?.name || raw.location?.region || null;
 
+  // VIN, номер і дата реєстрації: Otomoto шифрує їх (видно лише по кнопці),
+  // але ми знаємо, ЧИ продавець їх вказав.
+  const vin = cleanVin(paramVal(params, 'vin')?.value);
+  const hasVin = yes(paramVal(params, 'has_vin', 'with_vin'));
+  const dateReg = paramVal(params, 'date_registration', 'first_registration_date')?.value || '';
+  const hasRegData = yes(paramVal(params, 'with_registration')) || !!dateReg;
+  const firstRegistration = /^\d{4}-\d{2}-\d{2}/.test(dateReg) ? dateReg.slice(0, 10) : null;
+  const photo =
+    raw.thumbnail?.x2 || raw.thumbnail?.x1 ||
+    raw.images?.photos?.[0]?.url || null;
+
   return {
+    source: 'otomoto',
+    vin,
+    hasVin: hasVin || !!vin,
+    hasRegData,
+    firstRegistration,
+    photo: typeof photo === 'string' ? photo : null,
     id: String(raw.id && /^[A-Za-z0-9]+$/.test(String(raw.id)) ? raw.id : idFromUrl(url) || raw.id || url),
     url,
     title: String(title).trim(),
@@ -243,6 +261,9 @@ export function parseDetailPage(html, url) {
   const l = normalizeListing({ url, ...advert });
   l.url = url;
   l.description = stripHtml(advert.description);
+  l.vin = l.vin || vinFromText(l.description);
+  l.hasVin = l.hasVin || !!l.vin;
+  l.firstRegistration = l.firstRegistration || firstRegFromText(l.description);
   l.sellerType = advert.seller?.type || advert.sellerType || l.sellerType;
   if (!l.city) l.city = advert.seller?.location?.city?.name || advert.seller?.location?.city || null;
   // шукаємо лише всередині самого оголошення, а не по всій сторінці

@@ -2,11 +2,24 @@
 //  НАЛАШТУВАННЯ БОТА — тут міняєш фільтри, ціни й слова-тригери
 // ============================================================
 
+// Загальний бюджет "під ключ": авто + PCC + реєстрація + OC + діагностика + перше ТО + резерв
+export const TOTAL_BUDGET = 40000;
+
+// Витрати при купівлі (zł). Перевірено в листопаді 2026:
+// реєстрація з новими номерами 180 zł (зі старими — 67 zł);
+// OC у Кракові в середньому ~700–850 zł за рік, беремо із запасом.
+export const PURCHASE_COSTS = {
+  pccRate: 0.02,      // PCC 2% — лише якщо продає приватна особа
+  registration: 180,  // реєстрація з новими номерами
+  oc: 900,            // OC на рік (орієнтовно)
+  inspection: 400,    // діагностика перед купівлею + тест батареї в ASO
+  firstService: 1500, // перше ТО гібрида: масло, фільтри, свічки, гальмівна рідина, рідина коробки
+  reserve: 1000,      // резерв на дрібниці
+};
+
 export const BUDGET = {
   // Оголошення дорожчі за це — ігноруються повністю
   maxPrice: 42000,
-  // Комфортна ціна: усе, що вище, отримає мінус "понад бюджет"
-  targetPrice: 40000,
   maxMileage: 230000,
   minYear: 2010,
 };
@@ -14,7 +27,7 @@ export const BUDGET = {
 // Як часто бот може робити запити (мс між запитами до Otomoto)
 export const REQUEST_DELAY_MS = 3000;
 // Скільки сторінок оголошень максимум відкривати за один запуск
-export const MAX_DETAIL_FETCHES = 10;
+export const MAX_DETAIL_FETCHES = 15;
 // Надсилати також "👀 ГЛЯНЬ" (а не лише "🔥 ДЗВОНИ ВЖЕ")
 export const NOTIFY_LOOK = true;
 // Надсилати "⚠️ підозріло дешево"? Практика показала: майже завжди це
@@ -45,11 +58,57 @@ export const SEARCHES = [
   },
 ];
 
-export function buildSearchUrl(search) {
+export function buildSearchUrl(search, { market = false, page = 1 } = {}) {
   const base = 'https://www.otomoto.pl/osobowe' + (search.path ? '/' + search.path : '');
-  const params = new URLSearchParams({ ...COMMON_PARAMS, ...search.params });
+  // Для "живих цін" — без обмеження ціни (інакше медіана буде занижена)
+  const common = market
+    ? {
+        'search[filter_float_mileage:to]': '300000',
+        'search[filter_float_year:from]': String(BUDGET.minYear),
+        'search[filter_enum_fuel_type]': 'hybrid',
+        'search[order]': 'created_at_first:desc',
+      }
+    : COMMON_PARAMS;
+  const params = new URLSearchParams({ ...common, ...(market ? {} : search.params) });
+  if (page > 1) params.set('page', String(page));
   return `${base}?${params.toString()}`;
 }
+
+// ---- Живі ринкові ціни ----
+// Раз на добу бот збирає свіжі оголошення цих моделей БЕЗ обмеження ціни
+// і рахує медіану для моделі/року з поправкою на пробіг.
+export const MARKET = {
+  refreshHours: 20, // як часто оновлювати
+  pages: 2,         // скільки сторінок кожної моделі брати
+  keepDays: 45,     // скільки днів памʼятати ціни
+  minSamples: 5,    // мінімум оголошень, щоб показувати живу ціну
+};
+
+// ---- OLX ----
+// На OLX гібриди сховані у фільтрі палива "CNG i Hybryda" (значення cng).
+// Чисті CNG-машини потім відсіюють правила ("не гібрид").
+export const OLX = { enabled: true, pages: 2, limit: 50 };
+export function buildOlxUrl(offset = 0) {
+  const p = new URLSearchParams({
+    offset: String(offset),
+    limit: String(OLX.limit),
+    category_id: '84', // Samochody osobowe
+    sort_by: 'created_at:desc',
+    'filter_enum_petrol[0]': 'cng',
+    'filter_enum_transmission[0]': 'automatic',
+    'filter_float_price:to': String(BUDGET.maxPrice),
+    'filter_float_year:from': String(BUDGET.minYear),
+    'filter_float_milage:to': String(BUDGET.maxMileage),
+  });
+  return `https://www.olx.pl/api/v1/offers/?${p.toString()}`;
+}
+
+// ---- Звіти (час Варшави) ----
+export const REPORTS = {
+  timeZone: 'Europe/Warsaw',
+  dailyHour: 20,  // щоденний звіт після 20:00
+  weeklyDay: 0,   // тижневий — у неділю (0 = неділя)
+};
 
 // Орієнтовні ринкові ціни (zł) для пробігу ~150 тис. км.
 // Це МОЇ оцінки з оголошень листопада 2026 — підправляй під ринок.
