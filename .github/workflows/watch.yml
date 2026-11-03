@@ -1,0 +1,46 @@
+name: Otomoto hybrid watcher
+
+on:
+  schedule:
+    # Кожні 15 хвилин (час UTC). GitHub може запускати із запізненням на кілька хвилин.
+    # Для ПРИВАТНОГО репозиторію постав '*/30 * * * *', щоб вкластися в безкоштовний ліміт.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}   # кнопка "Run workflow" для ручного запуску
+
+permissions:
+  contents: write         # щоб зберігати data/state.json (памʼять бота)
+
+concurrency:
+  group: otomoto-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Шукаємо нові оголошення
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Адреса дому — лише в секретах, ніколи в коді
+          HOME_ADDRESS: ${{ secrets.HOME_ADDRESS }}
+          HOME_LAT: ${{ secrets.HOME_LAT }}
+          HOME_LON: ${{ secrets.HOME_LON }}
+          # Необовʼязково: якщо задати — відстань рахуватиме Google Maps
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: node src/index.js
+
+      - name: Зберігаємо памʼять бота
+        run: |
+          git config user.name "otomoto-bot"
+          git config user.email "otomoto-bot@users.noreply.github.com"
+          git add data/state.json || true
+          git diff --cached --quiet || git commit -m "bot: update seen listings"
+          git push || echo "push не вдався (буде повтор наступного разу)"
