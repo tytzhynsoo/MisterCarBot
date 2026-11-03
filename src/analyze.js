@@ -147,11 +147,6 @@ export function analyze(l) {
   if (l.mileage) {
     if (l.mileage <= 150000) { score += 1; pros.push(`Помірний пробіг: ${fmt(l.mileage)} км`); }
     else if (l.mileage > 200000) { score -= 1; cons.push(`Великий пробіг: ${fmt(l.mileage)} км`); }
-    const years = l.year ? Math.max(1, new Date().getFullYear() - l.year) : null;
-    if (years && years >= 3 && l.mileage / years < 6000) {
-      score -= 2;
-      cons.push(`Підозріло малий пробіг для ${years} років (${fmt(Math.round(l.mileage / years))} км/рік) — перевір історію пробігу`);
-    }
   }
 
   // ---------- тип кузова і сон у машині ----------
