@@ -69,10 +69,32 @@ export async function homePoint(geo) {
   const lat = Number(process.env.HOME_LAT);
   const lon = Number(process.env.HOME_LON);
   if (Number.isFinite(lat) && Number.isFinite(lon) && process.env.HOME_LAT) return { lat, lon };
-  const addr = process.env.HOME_ADDRESS;
+  const addr = (process.env.HOME_ADDRESS || '').trim();
   if (!addr) return null;
   // адресу дому НЕ кешуємо у state.json (репозиторій може бути публічним)
-  return geo.geocode(addr, { useCache: false });
+  for (const q of homeQueryVariants(addr)) {
+    const p = await geo.geocode(q, { useCache: false });
+    if (p) return p;
+  }
+  return { notFound: true };
+}
+
+// Варіанти запиту від найточнішого до найзагальнішого:
+// повна адреса → без номера квартири → поштовий код + місто
+export function homeQueryVariants(addr) {
+  const variants = [addr];
+  const noFlat = addr
+    .replace(/\s*(\/|m\.|kw\.?|кв\.?|apt\.?|lok\.?)\s*\d+[a-z]?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  variants.push(noFlat);
+  const postal = addr.match(/\b\d{2}-?\d{3}\b/);
+  const city = /krak[oó]w|краків/i.test(addr) ? 'Kraków' : '';
+  if (postal) {
+    const code = postal[0].includes('-') ? postal[0] : `${postal[0].slice(0, 2)}-${postal[0].slice(2)}`;
+    variants.push(`${code} ${city}`.trim() + ', Polska');
+  }
+  return [...new Set(variants.filter(Boolean))];
 }
 
 export async function distanceTo(geo, home, l) {

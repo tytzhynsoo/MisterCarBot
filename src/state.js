@@ -7,7 +7,7 @@ const KEEP_DAYS = 90;
 export async function loadState(path) {
   try {
     const s = JSON.parse(await readFile(path, 'utf8'));
-    return { seen: s.seen || {}, lastErrorNotifiedAt: s.lastErrorNotifiedAt || null, geoCache: s.geoCache || {} };
+    return { seen: s.seen || {}, lastErrorNotifiedAt: s.lastErrorNotifiedAt || null, lastHomeWarnAt: s.lastHomeWarnAt || null, geoCache: s.geoCache || {} };
   } catch {
     return { seen: {}, lastErrorNotifiedAt: null, geoCache: {} };
   }

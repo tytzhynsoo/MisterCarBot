@@ -73,3 +73,12 @@ test('findCoords бере лише точки в Польщі', () => {
   assert.deepEqual(findCoords({ map: { lat: 50.35, lon: 18.91 } }), { lat: 50.35, lon: 18.91 });
   assert.equal(findCoords({ map: { lat: 0, lon: 0 } }), null);
 });
+
+import { homeQueryVariants } from '../src/geo.js';
+test('Варіанти пошуку адреси дому', () => {
+  const v = homeQueryVariants('Testowa 12 m. 93, 30-000 Kraków');
+  assert.equal(v[0], 'Testowa 12 m. 93, 30-000 Kraków');
+  assert.equal(v[1], 'Testowa 12, 30-000 Kraków');
+  assert.equal(v[2], '30-000 Kraków, Polska');
+  assert.deepEqual(homeQueryVariants('Testowa 12/93, 30000 Kraków')[2], '30-000 Kraków, Polska');
+});

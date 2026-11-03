@@ -119,6 +119,20 @@ async function main() {
     try {
       home = await homePoint(geo);
       if (!home) console.log('Відстань: не задано HOME_ADDRESS або HOME_LAT/HOME_LON — пропускаю');
+      if (home?.notFound) {
+        console.log('Відстань: адресу з HOME_ADDRESS не знайдено на карті');
+        const dayAgo = Date.now() - 24 * 3600 * 1000;
+        if (!state.lastHomeWarnAt || state.lastHomeWarnAt < dayAgo) {
+          await sendTelegram(
+            '⚠️ Не вдалося знайти твою адресу на карті, тож відстань поки не рахується. ' +
+              'Найпростіше: у Google Maps натисни на свій будинок, скопіюй координати ' +
+              'і додай у GitHub секрети HOME_LAT (перше число) та HOME_LON (друге число).',
+            tg,
+          ).catch((e) => console.error(e.message));
+          state.lastHomeWarnAt = Date.now();
+        }
+        home = null;
+      }
     } catch (e) {
       console.error(`Не вдалося знайти координати дому: ${e.message}`);
     }
