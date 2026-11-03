@@ -15,6 +15,18 @@ on:
         description: 'Діагностика (нічого не надсилає)'
         type: boolean
         default: false
+      vin:
+        description: 'Ручна перевірка historiapojazdu: VIN'
+        type: string
+        required: false
+      plate:
+        description: 'Номер (напр. KR12345)'
+        type: string
+        required: false
+      date:
+        description: 'Дата першої реєстрації (дд.мм.рррр)'
+        type: string
+        required: false
       probe:
         description: 'Перевірка historiapojazdu (нічого не надсилає)'
         type: boolean
@@ -43,9 +55,10 @@ jobs:
         run: |
           npm i --no-save playwright@1.48.2
           npx playwright install --with-deps chromium
-          node src/history-probe.js
+          DRY_RUN=1 MANUAL_VIN=JTDKN3DU5A0123456 MANUAL_PLATE=KR12345 MANUAL_DATE=01.01.2012 STATE_PATH=/tmp/probe-state.json node src/history.js
 
       - name: Шукаємо нові оголошення
+        id: watch
         if: ${{ !inputs.probe }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -58,6 +71,20 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           TEST_TOP: ${{ inputs.test && '1' || '' }}
         run: if [ "${{ inputs.debug }}" = "true" ]; then node src/debug.js; else node src/index.js; fi
+
+      - name: Перевірка на historiapojazdu.gov.pl
+        if: ${{ !inputs.probe && (steps.watch.outputs.history == 'true' || inputs.vin) }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MANUAL_VIN: ${{ inputs.vin }}
+          MANUAL_PLATE: ${{ inputs.plate }}
+          MANUAL_DATE: ${{ inputs.date }}
+        run: |
+          npm i --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+          node src/history.js
 
       - name: Зберігаємо памʼять бота
         run: |

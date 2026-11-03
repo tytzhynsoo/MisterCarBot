@@ -59,11 +59,13 @@ export function formatMessage(l, a, extra = {}) {
   const hist = [];
   if (l.vin) hist.push(`🔎 VIN: <code>${esc(l.vin)}</code>`);
   else if (l.hasVin) hist.push('🔎 VIN є в оголошенні — відкрий кнопкою VIN в оголошенні');
+  if (l.plate) hist.push(`🔢 Номер: ${esc(l.plate)}`);
   if (l.firstRegistration) hist.push(`📄 Перша реєстрація: ${esc(l.firstRegistration)}`);
   if (l.hasRegData && !l.firstRegistration) hist.push('📄 Номер і дата 1-ї реєстрації вказані в оголошенні (по кнопці)');
   if (hist.length) {
     lines.push('', ...hist);
-    if (l.vin || l.hasRegData) lines.push('   → перевір на historiapojazdu.gov.pl (VIN + номер + дата 1-ї реєстрації)');
+    if (extra.historyQueued) lines.push('🤖 Продавець дав усі 3 поля — перевіряю на historiapojazdu.gov.pl, звіт з PDF прийде за кілька хвилин');
+    else if (l.vin || l.hasRegData) lines.push('   → перевір на historiapojazdu.gov.pl (VIN + номер + дата 1-ї реєстрації)');
   }
 
   if (a.pros.length) {

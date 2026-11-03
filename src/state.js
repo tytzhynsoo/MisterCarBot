@@ -20,6 +20,8 @@ export function emptyState() {
     lastErrorNotifiedAt: null,
     lastHomeWarnAt: null,
     geoCache: {},
+    historyQueue: [],  // машини для автоматичної перевірки на historiapojazdu
+    historyDone: {},   // VIN -> коли перевірено
   };
 }
 

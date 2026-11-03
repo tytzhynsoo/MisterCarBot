@@ -25,7 +25,29 @@ export function isNorthAmericanVin(vin) {
 }
 
 // Дата першої реєстрації з тексту: "data pierwszej rejestracji: 12.05.2014"
+const DATE_RE = '(\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}[./-]\\d{1,2})';
 export function firstRegFromText(text) {
-  const m = String(text ?? '').match(/pierwsz\w* rejestracj\w*[^0-9]{0,30}(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/i);
+  const re = new RegExp(`(?:pierwsz\\w*|1\\.?)\\s*rejestracj\\w*[^0-9]{0,40}${DATE_RE}`, 'i');
+  const m = String(text ?? '').match(re);
   return m ? m[1] : null;
+}
+
+// Дата у форматі сайту historiapojazdu: dd.mm.rrrr
+export function toPlDate(d) {
+  if (!d) return null;
+  let m = String(d).match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (m) return `${m[3].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[1]}`;
+  m = String(d).match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (m) return `${m[1].padStart(2, '0')}.${m[2].padStart(2, '0')}.${m[3]}`;
+  return null;
+}
+
+// Польський номерний знак, лише якщо поруч є слово "nr rej", "numer rejestracyjny", "tablice"
+export function plateFromText(text) {
+  const re = /(?:nr\.?\s*rej\w*\.?|numer\s+rejestracyjn\w*|tablic\w*\s*rejestracyjn\w*|tablic\w*)\s*[:\-–]?\s*([A-Z]{1,3}\s?[A-Z0-9]{3,5})\b/gi;
+  for (const m of String(text ?? '').matchAll(re)) {
+    const p = m[1].toUpperCase().replace(/\s/g, '');
+    if (p.length >= 4 && p.length <= 8 && /^[A-Z]{1,3}/.test(p) && /\d/.test(p)) return p;
+  }
+  return null;
 }

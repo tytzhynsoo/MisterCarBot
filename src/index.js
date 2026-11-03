@@ -1,5 +1,6 @@
 // Головний скрипт: шукає нові оголошення (Otomoto + OLX), оцінює, шле в Telegram.
-import { readFile } from 'node:fs/promises';
+import { readFile, appendFile } from 'node:fs/promises';
+import { plateFromText, toPlDate } from './vin.js';
 import {
   SEARCHES, buildSearchUrl, buildOlxUrl, OLX, MARKET,
   REQUEST_DELAY_MS, MAX_DETAIL_FETCHES, NOTIFY_LOOK, NOTIFY_CAUTION,
@@ -270,12 +271,24 @@ async function main() {
     if (home) {
       try { listing.distance = await distanceTo(geo, home, listing); } catch (e) { console.error(`Відстань: ${e.message}`); }
     }
+    // Продавець сам дав VIN + номер + дату 1-ї реєстрації → автоматична перевірка historiapojazdu
+    listing.plate = listing.plate || plateFromText(`${listing.title}\n${listing.description || ''}`);
+    const regDate = toPlDate(listing.firstRegistration);
+    let historyQueued = false;
+    if (listing.vin && listing.plate && regDate) {
+      state.historyQueue ??= [];
+      state.historyDone ??= {};
+      if (!state.historyDone[listing.vin] && !state.historyQueue.some((q) => q.vin === listing.vin)) {
+        state.historyQueue.push({ vin: listing.vin, plate: listing.plate, date: regDate, title: listing.title, url: listing.url, mileage: listing.mileage });
+      }
+      historyQueued = true;
+    }
     try {
-      await sendTelegram(formatMessage(listing, a, { priceDrop: c.drop }), tg, listing.photo);
+      await sendTelegram(formatMessage(listing, a, { priceDrop: c.drop, historyQueued }), tg, listing.photo);
     } catch (e) {
       // якщо Telegram не зміг з фото — пробуємо без нього
       console.error(e.message);
-      await sendTelegram(formatMessage(listing, a, { priceDrop: c.drop }), tg).catch((e2) => console.error(e2.message));
+      await sendTelegram(formatMessage(listing, a, { priceDrop: c.drop, historyQueued }), tg).catch((e2) => console.error(e2.message));
     }
     state.seen[listing.id].sent = true;
     if (!testRun) {
@@ -290,6 +303,10 @@ async function main() {
 
   await sendReports(state);
   await saveState(STATE_PATH, state);
+  // сигнал для GitHub: є машини для перевірки на historiapojazdu
+  if (state.historyQueue?.length && process.env.GITHUB_OUTPUT) {
+    await appendFile(process.env.GITHUB_OUTPUT, 'history=true\n');
+  }
 }
 
 async function getHome(state, geo) {
