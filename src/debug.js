@@ -1,44 +1,32 @@
-// Діагностика доступу до OLX
-import { buildOlxUrl } from './config.js';
+// Діагностика Sprzedajemy.pl
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
-const H1 = { 'User-Agent': UA, 'Accept-Language': 'pl-PL,pl;q=0.9', Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'none', 'Upgrade-Insecure-Requests': '1' };
-const H2 = { 'User-Agent': UA, 'Accept-Language': 'pl-PL,pl;q=0.9', Accept: 'application/json, text/plain, */*', Referer: 'https://www.olx.pl/' };
-const plain = 'https://www.olx.pl/api/v1/offers/?offset=0&limit=50&category_id=84';
-const filtered = buildOlxUrl(0);
-const raw = filtered.replace(/%5B/g, '[').replace(/%5D/g, ']').replace(/%3A/g, ':');
-const cases = [['H1 plain', plain, H1], ['H2 plain', plain, H2], ['H1 filtered', filtered, H1], ['H2 filtered', filtered, H2], ['H1 raw', raw, H1], ['H1 petrol only', plain + '&filter_enum_petrol[0]=cng', H1]];
-for (const [name, u, h] of cases) {
-  const r = await fetch(u, { headers: h });
-  const t = await r.text();
-  let info = '';
-  if (r.status === 200) { try { const j = JSON.parse(t); info = `n=${j.data?.length} petrol=${(j.data || []).slice(0, 8).map((o) => o.params?.find((p) => p.key === 'petrol')?.value?.key).join(',')} prices=${(j.data || []).slice(0, 5).map((o) => o.params?.find((p) => p.key === 'price')?.value?.value).join(',')} titles=${(j.data || []).slice(0, 4).map((o) => o.title).join(' | ')}`; } catch { info = 'not json'; } }
-  console.log(`${name}: ${r.status} ${info}`);
-  await new Promise((res) => setTimeout(res, 3000));
+const H1 = { 'User-Agent': UA, 'Accept-Language': 'pl-PL,pl;q=0.9', Accept: 'text/html,application/xhtml+xml' };
+const sq = (s) => s.replace(/\s+/g, ' ');
+const u = 'https://sprzedajemy.pl/motoryzacja/samochody-osobowe/toyota/prius';
+const t = await (await fetch(u, { headers: H1 })).text();
+const a = t.indexOf('<li id="offer-');
+const b = t.indexOf('<li id="offer-', a + 20);
+console.log('ITEM:', sq(t.slice(a, b)));
+const names = [...new Set((t.match(/name="[^"]+"/g) || []))];
+console.log('NAMES:', names.join(' '));
+const sel = t.match(/<select[^>]*>[\s\S]{0,600}/g) || [];
+console.log('SELECTS:', sel.slice(0, 8).map((s) => sq(s).slice(0, 400)).join('\n'));
+const filt = [...new Set(t.match(/[?&](inp_[^"'&\s]+|items_per_page[^"&]*|sort[^"&]*)/g) || [])];
+console.log('URLPARAMS:', filt.slice(0, 40).join(' '));
+const pg = t.match(/href="[^"]*(?:offset|page)=[^"]*"/g) || [];
+console.log('PAGING:', pg.slice(0, 3).join(' '));
+const link = t.match(/href="(\/[^"]*nr\d+)"/)[1];
+const d = await (await fetch('https://sprzedajemy.pl' + link, { headers: H1 })).text();
+for (const key of ['class="price', 'offerDescription', 'description', 'Oferta od', 'og:image', 'class="locationName', 'location', 'Lokalizacja', 'Cena']) {
+  const i = d.indexOf(key);
+  console.log(`DETAIL[${key}] @${i}:`, i >= 0 ? sq(d.slice(Math.max(0, i - 200), i + 900)) : '-');
 }
-console.log('URL', filtered);
-
-// ---- Sprzedajemy.pl ----
-const sUrls = [
-  'https://sprzedajemy.pl/motoryzacja/samochody-osobowe/toyota/prius',
-  'https://sprzedajemy.pl/motoryzacja/samochody-osobowe/toyota/auris?inp_price%5Bto%5D=42000',
-];
-for (const u of sUrls) {
-  const r = await fetch(u, { headers: H1 });
-  const t = await r.text();
-  console.log(`SPRZ ${u} -> ${r.status} len ${t.length}`);
-  if (r.status !== 200) { console.log('SPRZ body', t.slice(0, 300).replace(/\s+/g, ' ')); continue; }
-  const links = [...new Set(t.match(/https?:\/\/sprzedajemy\.pl\/[a-z0-9-]+-nr\d+/g) || t.match(/href="(\/[^"]*nr\d+)"/g) || [])];
-  console.log('SPRZ links', links.length, links.slice(0, 5).join(' '));
-  console.log('SPRZ jsonld', (t.match(/application\/ld\+json[^>]*>([\s\S]{0,800})/) || [])[1]?.replace(/\s+/g, ' '));
-  const i = t.indexOf('offer-list-item') >= 0 ? t.indexOf('offer-list-item') : t.indexOf('<article');
-  console.log('SPRZ item html:', t.slice(i, i + 2500).replace(/\s+/g, ' '));
-  if (links[0]) {
-    const lu = links[0].startsWith('http') ? links[0] : 'https://sprzedajemy.pl' + links[0].replace(/^href="|"$/g, '');
-    const rr = await fetch(lu, { headers: H1 });
-    const tt = await rr.text();
-    console.log(`SPRZ detail ${lu} -> ${rr.status}`);
-    const k = tt.indexOf('Rok produkcji');
-    console.log('SPRZ detail params:', tt.slice(Math.max(0, k - 1500), k + 2500).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
-  }
-  await new Promise((res) => setTimeout(res, 3000));
+console.log('DETAIL ldjson:', (d.match(/application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g) || []).map((x) => sq(x).slice(0, 1500)).join('\n'));
+// фільтри в URL: пробуємо кілька варіантів і дивимось, чи міняється кількість
+for (const q of ['', '?inp_price%5Bto%5D=20000', '?inp_price[to]=20000', '?inp_attribute_249%5Bfrom%5D=2014']) {
+  const tt = await (await fetch(u + q, { headers: H1 })).text();
+  const cnt = (tt.match(/Wyniki:\s*[\d\s–-]+z?\s*[\d\s]*/) || tt.match(/(\d[\d\s]*)\s*ogłosze/) || [''])[0];
+  const prices = (tt.match(/class="price">[^<]*/g) || []).slice(0, 6).join(' | ');
+  console.log(`Q ${q}: ${sq(cnt)} :: ${sq(prices)}`);
+  await new Promise((r) => setTimeout(r, 2000));
 }
