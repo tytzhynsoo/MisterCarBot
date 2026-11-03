@@ -15,6 +15,10 @@ on:
         description: 'Діагностика (нічого не надсилає)'
         type: boolean
         default: false
+      probe:
+        description: 'Перевірка historiapojazdu (нічого не надсилає)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write         # щоб зберігати data/state.json (памʼять бота)
@@ -34,7 +38,15 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Перевірка historiapojazdu
+        if: ${{ inputs.probe }}
+        run: |
+          npm i --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+          node src/history-probe.js
+
       - name: Шукаємо нові оголошення
+        if: ${{ !inputs.probe }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
