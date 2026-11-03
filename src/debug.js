@@ -1,18 +1,18 @@
 // Діагностика: показує, які дані реально віддають Otomoto та OLX.
-// Запуск: node src/debug.js (на GitHub — Run workflow з галочкою debug)
 import { fetchHtml, extractNextData, collectParams, parseSearchPage } from './otomoto.js';
 
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+const H = { 'User-Agent': UA, 'Accept-Language': 'pl-PL,pl;q=0.9', Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8' };
 const short = (v, n = 300) => {
   const s = typeof v === 'string' ? v : JSON.stringify(v);
   return s && s.length > n ? s.slice(0, n) + '…' : s;
 };
-
 function findKeys(root, re, out = [], path = '', depth = 0, seen = new Set()) {
   if (!root || typeof root !== 'object' || depth > 40 || seen.has(root)) return out;
   seen.add(root);
   for (const [k, v] of Object.entries(root)) {
     const p = `${path}.${k}`;
-    if (re.test(k) && out.length < 60) out.push(`${p} = ${short(v, 200)}`);
+    if (re.test(k) && out.length < 40) out.push(`${p} = ${short(v, 200)}`);
     if (typeof v === 'string' && v.length > 50 && (v.startsWith('{"') || v.startsWith('[{'))) {
       try { findKeys(JSON.parse(v), re, out, p + '(json)', depth + 1, seen); } catch {}
     } else if (v && typeof v === 'object') findKeys(v, re, out, p, depth + 1, seen);
@@ -21,47 +21,64 @@ function findKeys(root, re, out = [], path = '', depth = 0, seen = new Set()) {
 }
 
 async function otomoto() {
-  console.log('===== OTOMOTO SEARCH =====');
-  const url = 'https://www.otomoto.pl/osobowe/toyota/prius?search%5Bfilter_float_price%3Ato%5D=42000&search%5Border%5D=created_at_first%3Adesc';
-  const html = await fetchHtml(url);
-  const data = extractNextData(html);
-  console.log('photo/image keys in search:', findKeys(data, /photo|image|thumbnail/i).slice(0, 10).join('\n'));
-  const list = parseSearchPage(html);
-  console.log('listings:', list.length, short(list[0], 800));
-  if (!list[0]) return;
-  console.log('===== OTOMOTO DETAIL =====', list[0].url);
-  const d = extractNextData(await fetchHtml(list[0].url));
-  console.log(findKeys(d, /vin|regist|rejestr|plate|photo|image|seller.?type|^type$|business|private/i).join('\n'));
-  const params = collectParams(d);
-  console.log('PARAM KEYS:', Object.entries(params).map(([k, v]) => `${k}=${short(v.value, 40)}|${short(v.label, 40)}`).join('\n'));
+  const html = await fetchHtml('https://www.otomoto.pl/osobowe/toyota/auris?search%5Bfilter_float_price%3Ato%5D=42000&search%5Border%5D=created_at_first%3Adesc');
+  const list = parseSearchPage(html).slice(0, 6);
+  for (const [i, l] of list.entries()) {
+    const d = extractNextData(await fetchHtml(l.url));
+    const adv = d?.props?.pageProps?.advert || {};
+    const p = collectParams(adv);
+    const pick = Object.entries(p).filter(([k]) => /vin|regist|rejestr|plate|date/.test(k)).map(([k, v]) => `${k}=${v.value}`);
+    console.log(`#${i} ${l.url}\n  params: ${pick.join(', ')}\n  seller: ${short(adv.seller, 300)}\n  advert keys: ${Object.keys(adv).join(',')}`);
+    if (i === 0) {
+      const vh = d?.props?.pageProps?.carsConditionWidget?.vehicleHistory?.props || {};
+      const { advert, ...rest } = vh;
+      console.log('  vehicleHistory props:', short(rest, 1500));
+      console.log('  photos[0]:', short(adv.images?.photos?.[0], 300));
+      console.log('  vin-ish:', findKeys(d.props.pageProps, /vin|plate|firstRegistration|registrationDate|licen/i).filter((s) => !/featureFlags|cookie/.test(s)).slice(0, 15).join('\n   '));
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
 }
 
 async function olx() {
-  console.log('===== OLX API =====');
-  const base = 'https://www.olx.pl/api/v1/offers/?offset=0&limit=40&category_id=84&sort_by=created_at:desc';
-  const res = await fetch(base + '&query=toyota%20prius', { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
-  console.log('status', res.status);
-  const j = await res.json();
-  const o = j.data?.[0];
-  console.log('keys:', o && Object.keys(o).join(','));
-  console.log('first:', short({ ...o, description: short(o?.description, 100) }, 2500));
-  const values = {};
-  for (const off of j.data || []) for (const p of off.params || []) {
-    values[p.key] ??= new Set();
-    values[p.key].add(`${p.value?.key ?? ''}|${p.value?.label ?? ''}`);
+  const urls = [
+    'https://www.olx.pl/api/v1/offers/?offset=0&limit=5&category_id=84&query=toyota%20prius',
+    'https://www.olx.pl/motoryzacja/samochody/toyota/prius/',
+  ];
+  for (const u of urls) {
+    const r = await fetch(u, { headers: { ...H, Referer: 'https://www.olx.pl/' } });
+    const t = await r.text();
+    console.log(`OLX ${u} -> ${r.status}, len ${t.length}, prerendered=${t.includes('__PRERENDERED_STATE__')}, nextdata=${t.includes('__NEXT_DATA__')}`);
+    if (r.status !== 200) { console.log(short(t, 300)); continue; }
+    if (u.includes('/api/')) { const j = JSON.parse(t); console.log(short(j.data?.[0], 2500)); continue; }
+    const m = t.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/);
+    if (m) {
+      const state = JSON.parse(JSON.parse(m[1]));
+      console.log('state keys:', Object.keys(state).join(','));
+      const ads = state.listing?.listing?.ads || [];
+      console.log('ads:', ads.length);
+      if (ads[0]) console.log('ad0:', short({ ...ads[0], description: short(ads[0].description, 80) }, 3000));
+      console.log('petrol filter:', findKeys(state, /petrol/i).slice(0, 10).join('\n'));
+    }
+    const fuel = t.match(/.{0,200}(CNG i hybryd|Hybryda|hybrid).{0,200}/gi) || [];
+    console.log('fuel snippets:', fuel.slice(0, 3).map((s) => short(s, 400)).join('\n---\n'));
   }
-  for (const [k, s] of Object.entries(values)) console.log(`PARAM ${k}: ${short([...s].slice(0, 12).join(' ; '), 400)}`);
-  console.log('metadata:', short(j.metadata, 600), 'links:', short(j.links, 400));
-  for (const f of ['filter_enum_petrol[0]=hybrid', 'filter_enum_petrol[0]=hybryda', 'filter_enum_petrol[0]=cng-hybrid', 'filter_enum_petrol[0]=hybrid-cng']) {
-    const r = await fetch(`${base}&${f}&query=toyota`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const jj = await r.json().catch(() => ({}));
-    console.log(`TRY ${f}: status ${r.status}, n=${jj.data?.length}, total=${jj.metadata?.total_elements}, petrol=${(jj.data || []).slice(0, 5).map((x) => x.params?.find((p) => p.key === 'petrol')?.value?.label).join(',')}`);
+  // спроба з фільтром
+  for (const f of ['hybrid', 'cng-and-hybrid', 'hybryda', 'cng']) {
+    const u = `https://www.olx.pl/motoryzacja/samochody/toyota/?search%5Bfilter_enum_petrol%5D%5B0%5D=${f}`;
+    const r = await fetch(u, { headers: H });
+    const t = await r.text();
+    const m = t.match(/window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")/);
+    let n = '?', petrols = '';
+    if (m) {
+      const st = JSON.parse(JSON.parse(m[1]));
+      const ads = st.listing?.listing?.ads || [];
+      n = `${ads.length} total=${st.listing?.listing?.totalElements}`;
+      petrols = ads.slice(0, 6).map((a) => a.params?.find((p) => p.key === 'petrol')?.normalizedValue || a.params?.find((p) => p.key === 'petrol')?.value).join(',');
+    }
+    console.log(`FILTER ${f}: ${r.status} ads=${n} petrol=${petrols}`);
   }
-  // сторінка OLX — варіанти фільтра палива
-  const page = await fetch('https://www.olx.pl/motoryzacja/samochody/toyota/', { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0' } }).then((r) => r.text());
-  const m = page.match(/.{0,300}(CNG|Hybryd).{0,300}/gi) || [];
-  console.log('PAGE fuel snippets:', m.slice(0, 4).map((s) => short(s, 400)).join('\n---\n'));
 }
 
 await otomoto().catch((e) => console.log('otomoto error', e.message));
-await olx().catch((e) => console.log('olx error', e.message));
+await olx().catch((e) => console.log('olx error', e.stack));
