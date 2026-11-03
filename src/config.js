@@ -17,6 +17,9 @@ export const REQUEST_DELAY_MS = 3000;
 export const MAX_DETAIL_FETCHES = 10;
 // Надсилати також "👀 ГЛЯНЬ" (а не лише "🔥 ДЗВОНИ ВЖЕ")
 export const NOTIFY_LOOK = true;
+// Надсилати "⚠️ підозріло дешево"? Практика показала: майже завжди це
+// побиті машини / США / шахрайство, тому за замовчуванням вимкнено.
+export const NOTIFY_CAUTION = false;
 // Від скількох км від дому позначати оголошення як "далеко"
 export const FAR_DISTANCE_KM = 300;
 
@@ -66,7 +69,16 @@ export const KEYWORDS = {
   taxi: ['taxi', 'taksówk', 'taksowk', 'uber', 'bolt', 'free now', 'freenow', 'korporacj', 'po taxi', 'ex taxi'],
   damaged: ['uszkodzon', 'do naprawy', 'powypadkow', 'nie odpala', 'zatarty', 'na części', 'na czesci'],
   rhd: ['anglik', 'kierownica po prawej', 'kierownica z prawej', 'rhd'],
-  usa: ['usa', 'kanad', 'z ameryki', 'copart', 'iaai'],
+  // Імпорт зі США/Канади — НЕ відсіюємо, лише попереджаємо (якщо машина вже в Польщі)
+  usa: ['usa', 'u.s.a', 'stany zjednoczone', 'kanad', 'z ameryki', 'ameryka', 'amerykań', 'carfax'],
+  // ("mile" не додаємо: у польській "mile widziane" = "бажано")
+  // Машина ще НЕ в Польщі: під пригон, у дорозі, лот з аукціону — відсіюємо повністю
+  notInPoland: ['pod sprowadzenie', 'na zamówienie', 'na zamowienie', 'w drodze', 'w transporcie', 'auto w usa',
+    'dostępny od', 'dostepny od', 'przed sprowadzeniem', 'sprowadzimy', 'płyną', 'na statku', 'transport z',
+    'copart', 'iaai', 'manheim', 'licytacj', 'aukcj', 'auction', 'lot number', 'numer lotu'],
+  // Ознаки, що машина фізично в Польщі
+  inPoland: ['zarejestrowan', 'polskie tablice', 'tablice pl', 'opłacon', 'oplacon', 'gotowy do rejestracji',
+    'gotowe do rejestracji', 'akcyza zapłacona', 'akcyza zaplacona', 'przegląd w polsce', 'oc i przegląd'],
   service: ['aso', 'książka serwisowa', 'ksiazka serwisowa', 'serwisowan', 'historia serwis', 'faktury'],
   battery: ['test baterii', 'test akumulatora', 'bateria sprawdzon', 'battery care', 'stan baterii', 'gwarancja na bateri', 'bateria po regeneracji', 'nowa bateria'],
   polishSalon: ['salon polska', 'salon pl', 'polski salon'],

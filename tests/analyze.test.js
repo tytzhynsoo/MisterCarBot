@@ -74,3 +74,41 @@ test('Визначення Prius vs Prius+', () => {
   assert.equal(detectKind({ title: 'Toyota Prius 1.8 HSD', make: 'toyota', url: '' }), 'prius');
   assert.equal(detectKind({ title: 'Toyota Prius+ 1.8', make: 'toyota', url: '' }), 'prius_plus');
 });
+
+test('Під пригон / аукціон → SKIP', () => {
+  assert.equal(analyze(base({ description: 'Auto pod sprowadzenie z USA, Copart lot 123. Bardzo ładne.' })).verdict, 'SKIP');
+  assert.equal(analyze(base({ description: 'Samochód w drodze do Polski, dostępny od grudnia.' })).verdict, 'SKIP');
+});
+
+test('Імпорт зі США, але вже в Польщі → не SKIP, з попередженням', () => {
+  const a = analyze(base({ description: 'Sprowadzony z USA w 2024, zarejestrowany w Polsce, serwis ASO. Auto zadbane i gotowe do jazdy.' }));
+  assert.notEqual(a.verdict, 'SKIP');
+  assert.ok(a.cons.some((c) => c.includes('США')));
+  assert.ok(a.pros.some((p) => p.includes('Польщі')));
+});
+
+test('"mile widziane" не вважається США', () => {
+  const a = analyze(base({ description: 'Oględziny mile widziane, serwis ASO, zarejestrowany w Polsce. Auto zadbane.' }));
+  assert.ok(!a.cons.some((c) => c.includes('США')));
+});
+
+test('Хитрість з пробігом 842 → SKIP', () => {
+  const a = analyze(base({ mileage: 842 }));
+  assert.equal(a.verdict, 'SKIP');
+  assert.ok(a.skipReasons.some((r) => r.includes('842')));
+});
+
+test('Новий Camry за копійки → SKIP', () => {
+  const a = analyze(base({ title: 'Toyota Camry 2.5 Hybrid', model: 'camry', url: 'https://www.otomoto.pl/osobowe/oferta/toyota-camry-ID6Icam.html', year: 2021, price: 39000, mileage: 40000, body: 'sedan' }));
+  assert.equal(a.verdict, 'SKIP');
+});
+
+test('Зареєстрована в Польщі → плюс; без інформації → мінус', () => {
+  assert.ok(analyze(base({ registeredPL: true })).pros.some((p) => p.includes('польські номери')));
+  assert.ok(analyze(base({ description: 'Auto zadbane, serwis ASO, książka serwisowa, polecam serdecznie wszystkim.' })).cons.some((c) => c.includes('фізично')));
+});
+
+test('"usatysfakcjonowany" не вважається США', () => {
+  const a = analyze(base({ description: 'Będziesz usatysfakcjonowany, serwis ASO, zarejestrowany w Polsce. Auto zadbane.' }));
+  assert.ok(!a.cons.some((c) => c.includes('США')));
+});

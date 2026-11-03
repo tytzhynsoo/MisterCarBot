@@ -1,6 +1,6 @@
 // Головний скрипт: шукає нові оголошення, оцінює, шле в Telegram.
 import { readFile } from 'node:fs/promises';
-import { SEARCHES, buildSearchUrl, REQUEST_DELAY_MS, MAX_DETAIL_FETCHES, NOTIFY_LOOK } from './config.js';
+import { SEARCHES, buildSearchUrl, REQUEST_DELAY_MS, MAX_DETAIL_FETCHES, NOTIFY_LOOK, NOTIFY_CAUTION } from './config.js';
 import { fetchHtml, parseSearchPage, parseDetailPage, mergeListing, BlockedError } from './otomoto.js';
 import { analyze } from './analyze.js';
 import { formatMessage, sendTelegram } from './telegram.js';
@@ -100,7 +100,7 @@ async function main() {
   }
 
   let toSend = results
-    .filter(({ a }) => a.verdict === 'HOT' || a.verdict === 'CAUTION' || (a.verdict === 'LOOK' && NOTIFY_LOOK && !firstRun))
+    .filter(({ a }) => a.verdict === 'HOT' || (a.verdict === 'CAUTION' && NOTIFY_CAUTION) || (a.verdict === 'LOOK' && NOTIFY_LOOK && !firstRun))
     .sort((x, y) => PRIORITY[x.a.verdict] - PRIORITY[y.a.verdict] || y.a.score - x.a.score);
 
   if (firstRun) {

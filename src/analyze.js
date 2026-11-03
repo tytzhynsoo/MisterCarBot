@@ -18,13 +18,13 @@ export const VERDICT = {
   SKIP: 'SKIP',
 };
 
-// Короткі слова (aso, usa, gaz…) шукаємо лише з початку слова,
-// щоб "aso" не знаходилось у "kasowanie", а "usa" — у "musa".
+// Короткі слова (aso, usa, gaz…) шукаємо лише як окремі слова,
+// щоб "aso" не знаходилось у "kasowanie", а "usa" — у "usatysfakcjonowany".
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const has = (text, words) =>
   words.some((w) =>
     w.length <= 4
-      ? new RegExp(`(^|[^a-z0-9ąćęłńóśźż])${escapeRe(w)}`, 'i').test(text)
+      ? new RegExp(`(^|[^a-z0-9ąćęłńóśźż])${escapeRe(w)}($|[^a-z0-9ąćęłńóśźż])`, 'i').test(text)
       : text.includes(w),
   );
 
@@ -95,6 +95,24 @@ export function analyze(l) {
   if (/manual/.test(l.gearbox)) skipReasons.push('механіка');
   if (l.damaged || has(text, KEYWORDS.damaged)) skipReasons.push('пошкоджена');
   if (has(text, KEYWORDS.rhd)) skipReasons.push('правий кермо');
+
+  // Машина ще не в Польщі: під пригон / у дорозі / лот з аукціону
+  if (has(text, KEYWORDS.notInPoland)) skipReasons.push('машина ще не в Польщі (під пригон / аукціон)');
+
+  // Хитрість з пробігом: "842 km" замість 842 000 на машині кількарічної давності
+  const age = l.year ? new Date().getFullYear() - l.year : null;
+  if (l.mileage !== null && l.mileage !== undefined && age !== null && age >= 3) {
+    if (l.mileage < 5000) {
+      const real = l.mileage * 1000;
+      skipReasons.push(`пробіг ${l.mileage} км на авто ${l.year} р. — найімовірніше ${real.toLocaleString('uk-UA')} км`);
+    }
+  }
+
+  // Модель без нашої ринкової таблиці (Camry, RAV4, C-HR…): новий гібрид за ≤42 тис. — майже напевно
+  // побитий/з США. Відсіюємо, щоб не засмічував сповіщення.
+  if (!REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
+    skipReasons.push(`занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
+  }
   if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, pros, cons, score: 0 };
 
   let score = 0;
@@ -129,6 +147,11 @@ export function analyze(l) {
   if (l.mileage) {
     if (l.mileage <= 150000) { score += 1; pros.push(`Помірний пробіг: ${fmt(l.mileage)} км`); }
     else if (l.mileage > 200000) { score -= 1; cons.push(`Великий пробіг: ${fmt(l.mileage)} км`); }
+    const years = l.year ? Math.max(1, new Date().getFullYear() - l.year) : null;
+    if (years && years >= 3 && l.mileage / years < 6000) {
+      score -= 2;
+      cons.push(`Підозріло малий пробіг для ${years} років (${fmt(Math.round(l.mileage / years))} км/рік) — перевір історію пробігу`);
+    }
   }
 
   // ---------- тип кузова і сон у машині ----------
@@ -158,7 +181,18 @@ export function analyze(l) {
   // ---------- слова в описі ----------
   const descKnown = (l.description || '').length > 0;
   if (has(text, KEYWORDS.taxi)) { score -= 4; cons.push('Згадка про таксі/Uber/Bolt у тексті — перевір історію'); }
-  if (has(text, KEYWORDS.usa)) { score -= 2; cons.push('Можливий імпорт зі США/Канади — часто після ДТП'); }
+  const origin = `${l.origin || ''}`.toLowerCase();
+  if (/usa|stany|kanad|canada|united states/.test(origin) || has(text, KEYWORDS.usa)) {
+    score -= 2;
+    cons.push('Імпорт зі США/Канади — часто з аукціонів після ДТП: обовʼязково Carfax/AutoCheck за VIN і товщиномір');
+  }
+  // Чи машина фізично в Польщі
+  if (l.registeredPL || l.hasPlate || has(text, KEYWORDS.inPoland)) {
+    pros.push(l.registeredPL || l.hasPlate ? 'Зареєстрована в Польщі / польські номери' : 'Схоже, вже в Польщі (опис)');
+  } else {
+    score -= 1;
+    cons.push('Не вказано, що зареєстрована в Польщі — перепитай, чи авто фізично тут');
+  }
   if (has(text, KEYWORDS.service) || l.serviceRecord) { score += 1; pros.push('Згадано сервіс/ASO/книжку'); }
   if (has(text, KEYWORDS.battery)) { score += 1; pros.push('Згадано тест/стан гібридної батареї'); }
   if (has(text, KEYWORDS.polishSalon)) { score += 1; pros.push('Польський салон'); }

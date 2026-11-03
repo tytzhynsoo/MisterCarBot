@@ -155,6 +155,14 @@ export function normalizeListing(raw) {
   const noAccident = paramVal(params, 'no_accident', 'bezwypadkowy');
   const serviceRecord = paramVal(params, 'service_record', 'serwisowany_w_aso');
   const origin = paramVal(params, 'country_origin', 'kraj_pochodzenia');
+  // "Zarejestrowany w Polsce" і "Ma numer rejestracyjny" — назви ключів можуть відрізнятися
+  const yes = (p) => !!p && /^(1|true|tak|yes)$/i.test(String(p.value ?? p.label));
+  let registeredPL = false;
+  let hasPlate = false;
+  for (const [k, p] of Object.entries(params)) {
+    if (/registered|zarejestrowany/.test(k) && !/date|data/.test(k)) registeredPL ||= yes(p);
+    if (/has_registration|registration_number|numer_rejestr|has_plate/.test(k)) hasPlate ||= yes(p);
+  }
 
   const location =
     raw.location?.city?.name ||
@@ -182,6 +190,8 @@ export function normalizeListing(raw) {
     noAccident: noAccident ? /^(1|true|tak|yes)$/i.test(noAccident.value) : null,
     serviceRecord: serviceRecord ? /^(1|true|tak|yes)$/i.test(serviceRecord.value) : null,
     origin: origin?.label || null,
+    registeredPL,
+    hasPlate,
     city: typeof location === 'string' ? location : null,
     region: typeof region === 'string' ? region : null,
     sellerType: raw.sellerLink?.type || raw.seller?.type || raw.sellerType || null,
@@ -271,7 +281,8 @@ export function mergeListing(base, detail) {
   if (!detail) return base;
   const merged = { ...base };
   for (const [k, v] of Object.entries(detail)) {
-    if (v !== null && v !== undefined && v !== '') merged[k] = v;
+    if (typeof v === 'boolean') merged[k] = Boolean(base[k]) || v; // "так" з будь-якого джерела перемагає
+    else if (v !== null && v !== undefined && v !== '') merged[k] = v;
   }
   return merged;
 }
