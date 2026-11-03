@@ -27,6 +27,10 @@ on:
         description: 'Дата першої реєстрації (дд.мм.рррр)'
         type: string
         required: false
+      dump:
+        description: 'Аналіз ринку в лог (нічого не надсилає)'
+        type: boolean
+        default: false
       probe:
         description: 'Перевірка historiapojazdu (нічого не надсилає)'
         type: boolean
@@ -70,7 +74,10 @@ jobs:
           # Необовʼязково: якщо задати — відстань рахуватиме Google Maps
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           TEST_TOP: ${{ inputs.test && '1' || '' }}
-        run: if [ "${{ inputs.debug }}" = "true" ]; then node src/debug.js; else node src/index.js; fi
+        run: |
+          if [ "${{ inputs.debug }}" = "true" ]; then node src/debug.js
+          elif [ "${{ inputs.dump }}" = "true" ]; then cp data/state.json /tmp/s.json; DUMP=1 DRY_RUN=1 TEST_TOP=1 STATE_PATH=/tmp/s.json node src/index.js
+          else node src/index.js; fi
 
       - name: Перевірка на historiapojazdu.gov.pl
         if: ${{ !inputs.probe && (steps.watch.outputs.history == 'true' || inputs.vin) }}

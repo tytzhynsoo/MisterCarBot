@@ -246,7 +246,17 @@ async function main() {
   let toSend = [];
   const intro = [];
   if (testRun) {
-    toSend = results.filter(wanted).sort(byScore).slice(0, 5);
+    toSend = results.filter(wanted).sort(byScore).slice(0, Number(process.env.TOP_N || 5));
+    if (process.env.DUMP === '1') {
+      for (const { listing: l, a } of results.filter(wanted).sort(byScore).slice(0, 25)) {
+        console.log('DUMP ' + JSON.stringify({
+          v: a.verdict, score: a.score, url: l.url, title: l.title, price: l.price, year: l.year, km: l.mileage,
+          kind: a.kind, ref: a.ref, live: a.live?.price, total: a.cost?.total, seller: l.sellerType, city: l.city,
+          origin: l.origin, regPL: l.registeredPL, vin: l.vin, hasVin: l.hasVin, cons: a.cons, pros: a.pros,
+          desc: (l.description || '').replace(/\s+/g, ' ').slice(0, 900),
+        }));
+      }
+    }
     const skipped = results.filter(({ a }) => a.verdict === 'SKIP').length;
     const bySrc = (src) => results.filter((r) => r.c.src === src).length;
     intro.push(`🧪 Тест фільтрів. Перевірено: ${results.length} (Otomoto ${bySrc('otomoto')}, OLX ${bySrc('olx')}, Sprzedajemy ${bySrc('sprzedajemy')}), відсіяно: ${skipped}. Нижче — до 5 найкращих.`);
