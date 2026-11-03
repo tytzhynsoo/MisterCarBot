@@ -207,7 +207,8 @@ export function normalizeListing(raw) {
     damaged: damaged ? /^(1|true|tak|yes)$/i.test(damaged.value) : false,
     noAccident: noAccident ? /^(1|true|tak|yes)$/i.test(noAccident.value) : null,
     serviceRecord: serviceRecord ? /^(1|true|tak|yes)$/i.test(serviceRecord.value) : null,
-    origin: origin?.label || null,
+    // у детальній сторінці label = "Kraj pochodzenia", а країна — у value
+    origin: (origin && !/kraj pochodzenia/i.test(origin.label) ? origin.label : origin?.value) || null,
     registeredPL,
     hasPlate,
     city: typeof location === 'string' ? location : null,

@@ -143,6 +143,8 @@ export const KEYWORDS = {
   polishSalon: ['salon polska', 'salon pl', 'polski salon'],
   firstOwner: ['pierwszy właściciel', 'pierwszy wlasciciel', '1 właściciel', '1 wlasciciel', 'jeden właściciel', 'i właściciel'],
   lpg: ['lpg', 'gaz', 'autogaz', 'instalacja gazowa'],
+  // "приватна особа", але в тексті — комісіонка/автосалон
+  dealerHint: ['komis', 'w komisie', 'autohandel', 'auto handel', 'plac samochodowy', 'skup aut', 'skup$$$', 'zapraszamy na oględziny', 'zapraszamy do kontaktu'],
   invoiceNoPcc: ['nie płaci podatku', 'bez pcc', 'zwolniony z pcc', 'nie płacisz pcc', 'wystawiam fakturę', 'faktura vat', 'faktura marża'],
   plugIn: ['plug-in', 'plugin', 'phev'],
 };

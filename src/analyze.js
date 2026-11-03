@@ -228,6 +228,10 @@ export function analyze(l, ctx = {}) {
   }
   if (descKnown && (l.description || '').length < 80) { score -= 1; cons.push('Порожній/дуже короткий опис'); }
   const isPrivate = /private|prywat/i.test(String(l.sellerType || ''));
+  if (isPrivate && has(text, KEYWORDS.dealerHint)) {
+    score -= 2;
+    cons.push('Позначено «приватна особа», але в описі комісіонка/«zapraszamy» — схоже на перекупника під виглядом приватника');
+  }
   if (isPrivate && has(text, KEYWORDS.invoiceNoPcc)) {
     cons.push('«Приватна особа», але фактура/без PCC — можливо, перекупник');
   }
