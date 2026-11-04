@@ -1,6 +1,6 @@
 // Повні дані одного оголошення
 import { fetchHtml, extractNextData, collectParams, stripHtml } from './otomoto.js';
-const u = 'https://www.otomoto.pl/osobowe/oferta/mazda-3-ID6IhuDd.html';
+const u = 'https://www.otomoto.pl/osobowe/oferta/opel-mokka-ID6IhLq9.html';
 const d = extractNextData(await fetchHtml(u));
 const adv = d?.props?.pageProps?.advert || {};
 const p = collectParams(adv);
