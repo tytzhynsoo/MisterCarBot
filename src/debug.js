@@ -1,35 +1,21 @@
-// Найновіші надійні авто в бюджеті (2015+, автомат, до 36 тис.)
-import { fetchHtml, parseSearchPage } from './otomoto.js';
-
-const B = 'https://www.otomoto.pl/osobowe';
-const Q = (path, extra = '', from = 2015) =>
-  `${B}/${path}?search%5Bfilter_float_price%3Ato%5D=36000&search%5Bfilter_float_year%3Afrom%5D=${from}&search%5Bfilter_enum_gearbox%5D=automatic&search%5Bfilter_enum_damaged%5D=0&search%5Border%5D=filter_float_year%3Adesc${extra}`;
-const HYB = '&search%5Bfilter_enum_fuel_type%5D=hybrid';
-const CC = (a, b) => `&search%5Bfilter_float_engine_capacity%3Afrom%5D=${a}&search%5Bfilter_float_engine_capacity%3Ato%5D=${b}`;
-
-const SEARCHES = [
-  ['Auris Hybrid', Q('toyota/auris', HYB)],
-  ['Prius+', Q('toyota/prius', HYB + '&search%5Bfilter_enum_body_type%5D=minivan', 2012)],
-  ['Yaris Hybrid', Q('toyota/yaris', HYB, 2017)],
-  ['Tipo 1.6', Q('fiat/tipo', CC(1500, 1700))],
-  ['Tivoli', Q('ssangyong/tivoli', CC(1500, 1700))],
-  ['XLV', Q('ssangyong/xlv', CC(1500, 1700))],
-  ['Mazda 3 2.0', Q('mazda/3', CC(1900, 2100))],
-  ['CX-3 2.0', Q('mazda/cx-3', CC(1900, 2100))],
-  ['ix35 2.0', Q('hyundai/ix35', CC(1900, 2100), 2013)],
-  ['Sportage 2.0', Q('kia/sportage', CC(1900, 2100), 2013)],
+// Повні дані кількох оголошень
+import { fetchHtml, extractNextData, collectParams, stripHtml } from './otomoto.js';
+const URLS = [
+  'https://www.otomoto.pl/osobowe/oferta/fiat-tipo-ID6IjhUq.html',
+  'https://www.otomoto.pl/osobowe/oferta/fiat-tipo-ID6IhvZm.html',
+  'https://www.otomoto.pl/osobowe/oferta/ssangyong-xlv-ID6Ihv2U.html',
+  'https://www.otomoto.pl/osobowe/oferta/toyota-auris-ID6Iht2u.html',
 ];
-
-for (const [name, url] of SEARCHES) {
+for (const u of URLS) {
   try {
-    const html = await fetchHtml(url);
-    const items = parseSearchPage(html).filter((l) => l.price);
-    console.log(`AD ### ${name}: ${items.length}`);
-    for (const l of items.slice(0, 25)) {
-      console.log(`AD [${name}] ${l.price}zł | ${l.year} | ${l.mileage}km | ${l.engine}cc | ${l.fuelLabel} | ${l.city || ''} | ${l.sellerType || ''} | orig=${l.origin || ''} | ${l.title} | ${l.url}`);
-    }
-  } catch (e) {
-    console.log(`AD [${name}] ERR ${e.message}`);
-  }
+    const d = extractNextData(await fetchHtml(u));
+    const adv = d?.props?.pageProps?.advert || {};
+    const p = collectParams(adv);
+    console.log(`AD ===== ${u}`);
+    console.log(`AD title=${adv.title} price=${JSON.stringify(adv.price?.value ?? adv.price)} created=${adv.createdAt} photos=${adv.images?.photos?.length}`);
+    console.log(`AD seller=${JSON.stringify({ type: adv.seller?.type, name: adv.seller?.name, loc: adv.seller?.location?.address })}`);
+    console.log('AD params: ' + Object.entries(p).filter(([k]) => !/^(audio|comfort|electronics|performance|security|basic_information|technical_specs|condition_history|financial_information|ev_specs)$/.test(k)).map(([k, v]) => `${k}=${v.value}`).join(' | '));
+    console.log('AD desc: ' + stripHtml(adv.description || '').replace(/\s+/g, ' ').slice(0, 2500));
+  } catch (e) { console.log(`AD ERR ${u} ${e.message}`); }
   await new Promise((r) => setTimeout(r, 2500));
 }
