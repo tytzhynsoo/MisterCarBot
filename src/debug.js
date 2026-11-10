@@ -1,16 +1,17 @@
-// Повні дані кількох оголошень
-import { fetchHtml, extractNextData, collectParams, stripHtml } from './otomoto.js';
-const URLS = ['https://www.otomoto.pl/osobowe/oferta/fiat-tipo-ID6IjhUq.html'];
-for (const u of URLS) {
+import { fetchHtml, parseSearchPage } from './otomoto.js';
+const B = 'https://www.otomoto.pl/osobowe';
+const Q = (path, extra = '') =>
+  `${B}/${path}?search%5Bfilter_float_price%3Ato%5D=36000&search%5Bfilter_enum_fuel_type%5D=hybrid&search%5Bfilter_enum_damaged%5D=0&search%5Border%5D=filter_float_year%3Adesc${extra}`;
+const SEARCHES = [
+  ['auris-hybrid', Q('toyota/auris')],
+  ['auris-hybrid-p2', Q('toyota/auris','&page=2')],
+  ['prius', Q('toyota/prius')],
+];
+for (const [name, url] of SEARCHES) {
   try {
-    const d = extractNextData(await fetchHtml(u));
-    const adv = d?.props?.pageProps?.advert || {};
-    const p = collectParams(adv);
-    console.log(`AD ===== ${u}`);
-    console.log(`AD title=${adv.title} price=${JSON.stringify(adv.price?.value ?? adv.price)} created=${adv.createdAt} photos=${adv.images?.photos?.length}`);
-    console.log(`AD seller=${JSON.stringify({ type: adv.seller?.type, name: adv.seller?.name, loc: adv.seller?.location?.address })}`);
-    console.log('AD params: ' + Object.entries(p).filter(([k]) => !/^(audio|comfort|electronics|performance|security|basic_information|technical_specs|condition_history|financial_information|ev_specs)$/.test(k)).map(([k, v]) => `${k}=${v.value}`).join(' | '));
-    console.log('AD desc: ' + stripHtml(adv.description || '').replace(/\s+/g, ' ').slice(0, 2500));
-  } catch (e) { console.log(`AD ERR ${u} ${e.message}`); }
-  await new Promise((r) => setTimeout(r, 2500));
+    const html = await fetchHtml(url);
+    const ads = parseSearchPage(html);
+    console.log(`AD ### ${name}: ${ads.length}`);
+    for (const a of ads) console.log(`AD [${name}] ${a.price} | ${a.year} | ${a.mileage} | ${a.engine||''} | ${a.fuel||''} | ${a.city||a.location||''} | ${a.seller||''} | ${a.title} | ${a.url}`);
+  } catch (e) { console.log(`AD ERR ${name} ${e.message}`); }
 }
