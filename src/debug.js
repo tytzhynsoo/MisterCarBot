@@ -1,11 +1,6 @@
 // Повні дані кількох оголошень
 import { fetchHtml, extractNextData, collectParams, stripHtml } from './otomoto.js';
-const URLS = [
-  'https://www.otomoto.pl/osobowe/oferta/fiat-tipo-ID6IjhUq.html',
-  'https://www.otomoto.pl/osobowe/oferta/fiat-tipo-ID6IhvZm.html',
-  'https://www.otomoto.pl/osobowe/oferta/ssangyong-xlv-ID6Ihv2U.html',
-  'https://www.otomoto.pl/osobowe/oferta/toyota-auris-ID6Iht2u.html',
-];
+const URLS = ['https://www.otomoto.pl/osobowe/oferta/toyota-auris-ID6IjASd.html'];
 for (const u of URLS) {
   try {
     const d = extractNextData(await fetchHtml(u));
