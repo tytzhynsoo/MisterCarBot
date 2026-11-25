@@ -6,7 +6,8 @@ const BASE = 'https://autoplac.pl';
 
 // Пошуки. Ліміт ціни — у самій адресі (cena-do-43-tysiecy).
 export const AUTOPLAC_SEARCHES = [
-  { name: 'Autoplac: Toyota', path: '/oferty/samochody-osobowe/toyota/cena-do-43-tysiecy/benzynowe?fuelTypes=GASOLINE,HYBRID,LPG' },
+  // Найновіші першими (orderBy=INSERT_TIME). Бензинові Toyota бот однаково відсіює — беремо лише гібриди.
+  { name: 'Autoplac: Toyota гібриди', path: '/oferty/samochody-osobowe/toyota/cena-do-43-tysiecy/hybrydy?orderBy=INSERT_TIME&sortOrder=DESC' },
 ];
 export const autoplacUrl = (s) => BASE + s.path;
 
