@@ -1,5 +1,5 @@
 // Повна сума покупки "під ключ"
-import { PURCHASE_COSTS as C, TOTAL_BUDGET } from './config.js';
+import { PURCHASE_COSTS as C, TOTAL_BUDGET, GROUPS, groupOf } from './config.js';
 
 export function sellerKind(sellerType) {
   const s = String(sellerType || '').toLowerCase();
@@ -18,7 +18,7 @@ export function purchaseCost(l) {
     ['реєстрація', C.registration],
     ['OC', C.oc],
     ['діагностика', C.inspection],
-    ['перше ТО', C.firstService],
+    ['перше ТО', GROUPS[groupOf(l)].firstService ?? C.firstService],
     ['резерв', C.reserve],
   ];
   const total = l.price + items.reduce((s, [, v]) => s + v, 0);
