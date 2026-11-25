@@ -8,6 +8,7 @@ import {
 import { fetchHtml, parseSearchPage, parseDetailPage, mergeListing, BlockedError } from './otomoto.js';
 import { fetchOlx, parseOlxResponse } from './olx.js';
 import { SPRZ_SEARCHES, sprzUrl, parseSprzSearch, parseSprzDetail } from './sprzedajemy.js';
+import { AUTOPLAC_SEARCHES, autoplacUrl, parseAutoplacSearch, parseAutoplacDetail } from './autoplac.js';
 import { analyze, detectKind, detectMake } from './analyze.js';
 import { formatMessage, sendTelegram } from './telegram.js';
 import { loadState, saveState, getSeen } from './state.js';
@@ -24,7 +25,7 @@ const tg = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms + Math.floor(Math.random() * 1000)));
 const PRIORITY = { HOT: 0, CAUTION: 1, LOOK: 2, SKIP: 9 };
 const HOUR = 3600 * 1000;
-const SOURCE_NAMES = { otomoto: 'Otomoto', olx: 'OLX', sprzedajemy: 'Sprzedajemy.pl' };
+const SOURCE_NAMES = { otomoto: 'Otomoto', olx: 'OLX', sprzedajemy: 'Sprzedajemy.pl', autoplac: 'Autoplac.pl' };
 
 // ---- Режим перевірки парсера на збереженій сторінці ----
 async function parseFileMode(path, isDetail) {
@@ -119,6 +120,20 @@ async function collect(stats) {
     }
     await sleep(REQUEST_DELAY_MS);
   }
+  for (const s of AUTOPLAC_SEARCHES) {
+    try {
+      const found = parseAutoplacSearch(await fetchHtml(autoplacUrl(s)));
+      console.log(`[${s.name}] знайдено: ${found.length}`);
+      if (found.length) ok++;
+      for (const l of found) if (!all.has(l.id)) all.set(l.id, l);
+    } catch (e) {
+      // як і OLX, Autoplac може блокувати сервери GitHub — не вважаємо це поломкою
+      if (e instanceof BlockedError) stats.autoplacBlocked = (stats.autoplacBlocked || 0) + 1;
+      else stats.errors++;
+      console.error(`[${s.name}] помилка: ${e.message}`);
+    }
+    await sleep(REQUEST_DELAY_MS);
+  }
   return { all, ok, blocked };
 }
 
@@ -126,6 +141,7 @@ async function collect(stats) {
 const DETAIL = {
   otomoto: (html, url) => parseDetailPage(html, url),
   sprzedajemy: (html, url) => parseSprzDetail(html, url),
+  autoplac: (html, url) => parseAutoplacDetail(html, url),
 };
 
 async function main() {
