@@ -46,7 +46,6 @@ export function formatMessage(l, a, extra = {}) {
   const meta = [
     l.year && `📅 ${l.year}`,
     l.mileage && `🛣 ${fmt(l.mileage)} км`,
-    l.fuelLabel && `⛽ ${esc(l.fuelLabel)}`,
     (l.city || l.region) && `📍 ${esc([l.city, l.region].filter(Boolean).join(', '))}`,
   ].filter(Boolean);
   if (meta.length) lines.push(meta.join(' · '));

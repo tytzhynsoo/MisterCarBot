@@ -51,7 +51,7 @@ export const GROUPS = {
   },
   bmw_b47: {
     name: 'BMW B47',
-    maxPrice: 43000,       // у оголошенні — із запасом на торг
+    maxPrice: 43500,       // у оголошенні — із запасом на торг
     targetPrice: 40000,    // ціль: забрати за стільки
     maxMileage: 160000,    // жорсткий максимум
     preferMileage: 150000, // бажано не більше
@@ -60,7 +60,7 @@ export const GROUPS = {
   },
   v6_awd: {
     name: 'Journey/Freemont 3.6 AWD',
-    maxPrice: 43000,
+    maxPrice: 43500,
     targetPrice: 40000,
     maxMileage: BUDGET.maxMileage,
     minYear: 2011,         // Pentastar 3.6 у Journey/Freemont — з 2011
