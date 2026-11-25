@@ -130,7 +130,7 @@ export function analyze(l, ctx = {}) {
     if (!/diesel|olej/.test(fuelText) || (l.engine && (l.engine < 1900 || l.engine > 2100))) skip('notB47', 'BMW не 2.0 дизель (не B47)');
   } else if (kind === 'journey_v6') {
     if (l.engine && l.engine < rule.minEngine) skip('notV6', `двигун ${l.engine} см³ — потрібен 3.6 V6`);
-    if (/\b(fwd|4x2)\b|napęd na przód|na przednie/.test(text)) skip('notV6', 'передній привід — потрібен AWD');
+    if (/\b(fwd|4x2)\b|napęd na przód|na przednie|przednią oś/.test(`${text} ${l.drive || ''}`.toLowerCase())) skip('notV6', 'передній привід — потрібен AWD');
   } else if (!isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
   if (/manual/.test(l.gearbox)) skip('manual', 'механіка');
   if (l.damaged || has(text, KEYWORDS.damaged)) skip('damaged', 'пошкоджена');
@@ -153,6 +153,8 @@ export function analyze(l, ctx = {}) {
   if (!NON_HYBRID_KINDS.includes(kind) && !REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
     skip('tooCheap', `занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
   }
+  // Історія CEPiK з Autoplac: пробіг не збігається з техоглядами → не беремо
+  if (l.cepik?.mileageConsistent === false) skip('fakeMileage', 'CEPiK: пробіг не збігається з історією техоглядів');
   if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, skipCodes, pros, cons, score: 0 };
 
   let score = 0;
@@ -261,6 +263,24 @@ export function analyze(l, ctx = {}) {
   }
   if (l.sellerType) {
     pros.push(isPrivate ? 'Продає приватна особа' : 'Продає фірма (права споживача, фактура)');
+  }
+
+  // ---------- історія CEPiK (Autoplac) ----------
+  const cp = l.cepik;
+  if (cp) {
+    const n = cp.readings?.length || 0;
+    if (cp.mileageConsistent) {
+      score += n >= 2 ? 2 : 1;
+      pros.push(`📋 CEPiK: пробіг збігається з техоглядами (${n} запис(и), останній ${fmt(cp.lastReading)} км)`);
+    }
+    const days = cp.plFirstReg ? (Date.now() - new Date(cp.plFirstReg)) / 864e5 : null;
+    if (cp.foreignFirstReg && days !== null && days < 180) {
+      score -= 2;
+      cons.push(`Щойно ввезена: у Польщі з ${cp.plFirstReg}, до того — за кордоном. Історія CEPiK майже порожня — потрібен звіт за VIN (autoDNA/carVertical)`);
+      if (has(text, KEYWORDS.firstOwner)) cons.push('«Перший власник» — лише в Польщі, не з нуля');
+    } else if (n <= 1 && cp.mileageConsistent) {
+      cons.push('CEPiK: лише один запис пробігу — підтвердження слабке');
+    }
   }
 
   // ---------- вердикт ----------

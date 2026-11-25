@@ -8,7 +8,7 @@ import {
 import { fetchHtml, parseSearchPage, parseDetailPage, mergeListing, BlockedError } from './otomoto.js';
 import { fetchOlx, parseOlxResponse } from './olx.js';
 import { SPRZ_SEARCHES, sprzUrl, parseSprzSearch, parseSprzDetail } from './sprzedajemy.js';
-import { AUTOPLAC_SEARCHES, autoplacUrl, parseAutoplacSearch } from './autoplac.js';
+import { AUTOPLAC_SEARCHES, autoplacUrl, parseAutoplacSearch, parseAutoplacDetail } from './autoplac.js';
 import { analyze, detectKind, detectMake } from './analyze.js';
 import { formatMessage, sendTelegram } from './telegram.js';
 import { loadState, saveState, getSeen } from './state.js';
@@ -141,6 +141,7 @@ async function collect(stats) {
 const DETAIL = {
   otomoto: (html, url) => parseDetailPage(html, url),
   sprzedajemy: (html, url) => parseSprzDetail(html, url),
+  autoplac: (html, url) => parseAutoplacDetail(html, url),
 };
 
 async function main() {
