@@ -37,7 +37,7 @@ test('Sprzedajemy: сторінка оголошення', () => {
   assert.ok(!d.damaged);
   assert.match(d.photo, /1000x901c/);
   const l = mergeListing(p, d);
-  const a = analyze(l);
+  const a = analyze({ ...l, mileage: 160000 }); // фікстура 186 тис. > нового ліміту 170 тис.
   assert.notEqual(a.verdict, 'SKIP', a.skipReasons.join());
   assert.equal(a.kind, 'prius');
 });

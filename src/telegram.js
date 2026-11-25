@@ -36,8 +36,8 @@ export function formatMessage(l, a, extra = {}) {
   // ---- повна сума ----
   if (a.cost) {
     const c = a.cost;
-    const status = c.over > 0 ? `❌ на ${fmt(c.over)} понад ${fmt(c.budget)}` : `✅ у бюджеті ${fmt(c.budget)} (запас ${fmt(-c.over)})`;
-    lines.push(`🧾 <b>Разом під ключ: ~${fmt(c.total)} zł</b> — ${status}`);
+    const status = c.over > 0 ? `❌ понад бюджет на ${fmt(c.over)}` : `✅ у бюджеті (запас ${fmt(-c.over)})`;
+    lines.push(`🧾 <b>У день купівлі: ~${fmt(c.total)} zł</b> (ліміт ${fmt(c.budget)}) · з ТО і резервом ~${fmt(c.full)} (ліміт ${fmt(c.fullBudget)}) — ${status}`);
     const parts = c.items.filter(([, v]) => v > 0).map(([n, v]) => `${n} ${fmt(v)}`);
     const pccNote = c.seller === 'business' ? ' (фірма — без PCC)' : c.seller === 'unknown' ? ' (PCC — якщо продає приватна особа)' : '';
     lines.push(`   ${parts.join(' · ')}${pccNote}`);

@@ -54,7 +54,7 @@ const liveFor = (state, l) => livePrice(state.market, marketKey(detectKind(l), l
 async function refreshMarket(state) {
   if (state.marketUpdatedAt && Date.now() - state.marketUpdatedAt < MARKET.refreshHours * HOUR) return;
   let added = 0;
-  for (const s of SEARCHES.filter((x) => x.path)) {
+  for (const s of SEARCHES.filter((x) => x.path && x.hybrid !== false)) {
     for (let page = 1; page <= MARKET.pages; page++) {
       try {
         const found = parseSearchPage(await fetchHtml(buildSearchUrl(s, { market: true, page })));
