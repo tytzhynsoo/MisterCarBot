@@ -10,6 +10,8 @@ import {
   GOOD_HYBRID_MAKES,
   GEARBOX_WARNINGS,
   TOTAL_BUDGET,
+  GROUPS,
+  groupOf,
 } from './config.js';
 import { purchaseCost } from './costs.js';
 import { isNorthAmericanVin } from './vin.js';
@@ -26,6 +28,10 @@ export const SKIP_LABELS = {
   notInPL: 'ще не в Польщі',
   fakeMileage: 'хитрий пробіг',
   tooCheap: 'нереально дешеві',
+  notDiesel: 'BMW не дизель',
+  notB47: 'BMW не 2.0d (не B47)',
+  notV6: 'Journey/Freemont не 3.6 V6',
+  lpgBudget: 'з установкою ГБО дорожче за ліміт',
 };
 
 export const VERDICT = {
@@ -62,6 +68,8 @@ export function detectKind(l) {
   if (make === 'toyota' && /auris/.test(t)) return isCombi ? 'auris_ts' : 'auris_hatch';
   if (make === 'lexus' && /\bct\b|ct ?200|lexus-ct/.test(t)) return 'lexus_ct';
   if (make === 'toyota' || make === 'lexus') return 'other_toyota_hybrid';
+  if (l.group === 'bmw_b47') return 'bmw_b47';
+  if (l.group === 'v6_awd') return 'journey_v6';
   return 'other_brand_hybrid';
 }
 
@@ -110,11 +118,28 @@ export function analyze(l, ctx = {}) {
   const make = detectMake(l);
   const text = `${l.title}\n${l.description || ''}\n${l.shortDescription || ''}`.toLowerCase();
 
+  const group = groupOf(l);
+  const G = GROUPS[group];
+  const fuel = `${l.fuel || ''} ${l.fuelLabel || ''}`.toLowerCase();
+  const hasLpg = /lpg/.test(fuel) || has(text, KEYWORDS.lpg);
+
   // ---------- жорсткі фільтри ----------
-  if (l.price && l.price > BUDGET.maxPrice) skip('price', `ціна ${l.price} > ${BUDGET.maxPrice}`);
-  if (l.mileage && l.mileage > BUDGET.maxMileage) skip('mileage', `пробіг ${l.mileage} > ${BUDGET.maxMileage}`);
-  if (l.year && l.year < BUDGET.minYear) skip('year', `рік ${l.year} < ${BUDGET.minYear}`);
-  if (!isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
+  if (l.price && l.price > G.maxPrice) skip('price', `ціна ${l.price} > ${G.maxPrice}`);
+  if (l.mileage && l.mileage > G.maxMileage) skip('mileage', `пробіг ${l.mileage} > ${G.maxMileage}`);
+  if (l.year && l.year < G.minYear) skip('year', `рік ${l.year} < ${G.minYear}`);
+  if (group === 'hybrid' && !isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
+  if (group === 'bmw_b47') {
+    if (fuel.trim() && !/diesel/.test(fuel)) skip('notDiesel', 'не дизель — не B47');
+    if (l.engine && (l.engine < 1990 || l.engine > 2000)) skip('notB47', `обʼєм ${l.engine} см³ — не 2.0d B47`);
+  }
+  if (group === 'v6_awd') {
+    if (l.engine && (l.engine < 3500 || l.engine > 3700)) skip('notV6', `обʼєм ${l.engine} см³ — не 3.6 V6`);
+    if (/diesel/.test(fuel)) skip('notV6', 'дизель — не 3.6 V6');
+    // Лише бензин: ціна + установка ГБО теж має вкластися в ліміт
+    if (!hasLpg && l.price && l.price + G.lpgInstall > G.maxPrice) {
+      skip('lpgBudget', `без ГБО: ${l.price} + ~${G.lpgInstall} установка > ${G.maxPrice}`);
+    }
+  }
   if (/manual/.test(l.gearbox)) skip('manual', 'механіка');
   if (l.damaged || has(text, KEYWORDS.damaged)) skip('damaged', 'пошкоджена');
   if (l.rhd || has(text, KEYWORDS.rhd)) skip('rhd', 'правий кермо');
@@ -133,7 +158,7 @@ export function analyze(l, ctx = {}) {
 
   // Модель без нашої ринкової таблиці (Camry, RAV4, C-HR…): новий гібрид за ≤42 тис. — майже напевно
   // побитий/з США. Відсіюємо, щоб не засмічував сповіщення.
-  if (!REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
+  if (group === 'hybrid' && !REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
     skip('tooCheap', `занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
   }
   if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, skipCodes, pros, cons, score: 0 };
@@ -168,8 +193,17 @@ export function analyze(l, ctx = {}) {
 
   // ---------- повна сума покупки ----------
   const cost = purchaseCost(l);
-  if (cost && cost.over > 0) {
-    cons.push(`Разом з усіма витратами ~${fmt(cost.total)} zł — на ${fmt(cost.over)} понад ${fmt(TOTAL_BUDGET)}. Торгуйся до ~${fmt(Math.floor((l.price - cost.over) / 100) * 100)} zł`);
+  if (group === 'hybrid') {
+    if (cost && cost.over > 0) {
+      cons.push(`Разом з усіма витратами ~${fmt(cost.total)} zł — на ${fmt(cost.over)} понад ${fmt(TOTAL_BUDGET)}. Торгуйся до ~${fmt(Math.floor((l.price - cost.over) / 100) * 100)} zł`);
+    }
+  } else if (l.price) {
+    // Ціль — ціна самого авто; повну суму показуємо окремо
+    const lpgExtra = group === 'v6_awd' && !hasLpg ? G.lpgInstall : 0;
+    const total = (cost?.total || l.price) + lpgExtra;
+    const totalText = `Разом з PCC, реєстрацією, OC, діагностикою, першим ТО${lpgExtra ? ' і ГБО' : ''}: ~${fmt(total)} zł`;
+    if (l.price > G.targetPrice) cons.push(`Ціна вище цілі ${fmt(G.targetPrice)} zł — торгуйся. ${totalText}`);
+    else pros.push(`Ціна в межах цілі ${fmt(G.targetPrice)} zł. ${totalText}`);
   }
 
   // ---------- рік і пробіг ----------
@@ -177,6 +211,7 @@ export function analyze(l, ctx = {}) {
   if (l.mileage) {
     if (l.mileage <= 150000) { score += 1; pros.push(`Помірний пробіг: ${fmt(l.mileage)} км`); }
     else if (l.mileage > 200000) { score -= 1; cons.push(`Великий пробіг: ${fmt(l.mileage)} км`); }
+    else if (G.preferMileage && l.mileage > G.preferMileage) cons.push(`Пробіг ${fmt(l.mileage)} км — понад бажані ${fmt(G.preferMileage)}`);
   }
 
   // ---------- тип кузова і сон у машині ----------
@@ -186,6 +221,7 @@ export function analyze(l, ctx = {}) {
     prius: ['+', 'Prius III: сон удвох можливий (сидіння вперед + підставка)', 1],
     auris_hatch: ['-', 'Хетчбек: спати удвох тісно (~1,6 м)', -1],
     lexus_ct: ['-', 'Lexus CT: тісний багажник, для сну погано', -1],
+    journey_v6: ['+', 'Мінівен: зі складеними 2-м і 3-м рядами — рівна підлога (перевір довжину для сну)', 1],
   };
   const sn = sleepNotes[kind];
   if (sn) {
@@ -193,15 +229,42 @@ export function analyze(l, ctx = {}) {
     (sn[0] === '+' ? pros : cons).push(sn[1]);
   }
 
-  // ---------- марка / коробка ----------
-  const goodMake = GOOD_HYBRID_MAKES.includes(make);
-  if (goodMake) {
-    pros.push('Гібрид Toyota/Lexus: надійна коробка e-CVT');
+  // ---------- марка / коробка / двигун ----------
+  let goodMake;
+  if (group === 'bmw_b47') {
+    const t = `${l.title} ${l.model || ''} ${l.url || ''}`.toLowerCase();
+    // Рік 2014 — часто ще N47 (проблемний ланцюг). З 2016 — практично завжди B47.
+    goodMake = !l.year || l.year >= 2016;
+    if (!l.year || l.year <= 2015) cons.push('2014–2015: може бути ще N47 — перевір код двигуна за VIN (потрібен B47)');
+    else pros.push('2.0d 2016+: майже напевно B47 (підтверди за VIN)');
+    if (/active[\s-]?tourer|gran[\s-]?tourer/.test(t) || (/\bx1\b|-x1-/.test(t) && /sdrive/.test(t))) {
+      pros.push('Передній привід, коробка Aisin 8AT (класичний автомат)');
+    } else if (/seria[\s-]?[134]|\b[134]\d{2}d\b|-[134]\d{2}d-/.test(t)) {
+      pros.push('Задній привід, коробка ZF 8HP');
+    } else {
+      cons.push('Перевір привід і тип коробки за VIN/комплектацією');
+    }
+    if (/touring|kombi|combi|gran[\s-]?tourer/.test(`${t} ${l.body || ''}`)) pros.push('Універсал/мінівен — перевір довжину для сну');
+    cons.push('Дизель: потрібні регулярні поїздки трасою (DPF). Перевір відклик EGR за VIN в ASO, пробіг у блоках і сервісну історію');
+  } else if (group === 'v6_awd') {
+    const awd = /\bawd\b|4x4|4wd|napęd 4|napęd na (4|cztery)|\bawd\b/.test(text) || /4x4|awd/.test(`${l.drive || ''}`);
+    goodMake = awd;
+    if (awd) pros.push('Повний привід (AWD) вказано');
+    else { score -= 1; cons.push('Не вказано AWD — перепитай (бувають передньопривідні, особливо з США)'); }
+    pros.push('Pentastar 3.6 (розподілений впорскування) + класичний автомат 62TE');
+    if (hasLpg) pros.push('Є ГБО — перевір тип (послідовне), документи і систему змащування клапанів');
+    else cons.push(`Лише бензин: + ~${fmt(G.lpgInstall)} zł на установку ГБО (у місті ~13–15 л/100 км)`);
+    if (l.year && l.year <= 2013) cons.push('Ранній Pentastar (2011–2013): перевір ліву головку (стук, пропуски циліндра)');
   } else {
-    score -= 2;
-    cons.push(GEARBOX_WARNINGS[make] || 'Не Toyota/Lexus — перевір тип коробки (уникаємо DCT і ремінних CVT)');
+    goodMake = GOOD_HYBRID_MAKES.includes(make);
+    if (goodMake) {
+      pros.push('Гібрид Toyota/Lexus: надійна коробка e-CVT');
+    } else {
+      score -= 2;
+      cons.push(GEARBOX_WARNINGS[make] || 'Не Toyota/Lexus — перевір тип коробки (уникаємо DCT і ремінних CVT)');
+    }
+    if (has(text, KEYWORDS.plugIn)) cons.push('Плагін-гібрид — перевір стан великої батареї');
   }
-  if (has(text, KEYWORDS.plugIn)) cons.push('Плагін-гібрид — перевір стан великої батареї');
 
   // ---------- слова в описі ----------
   const descKnown = (l.description || '').length > 0;
@@ -219,11 +282,11 @@ export function analyze(l, ctx = {}) {
     cons.push('Не вказано, що зареєстрована в Польщі — перепитай, чи авто фізично тут');
   }
   if (has(text, KEYWORDS.service) || l.serviceRecord) { score += 1; pros.push('Згадано сервіс/ASO/книжку'); }
-  if (has(text, KEYWORDS.battery)) { score += 1; pros.push('Згадано тест/стан гібридної батареї'); }
+  if (group === 'hybrid' && has(text, KEYWORDS.battery)) { score += 1; pros.push('Згадано тест/стан гібридної батареї'); }
   if (has(text, KEYWORDS.polishSalon)) { score += 1; pros.push('Польський салон'); }
   if (has(text, KEYWORDS.firstOwner)) { score += 1; pros.push('Перший власник (заявлено)'); }
   if (l.noAccident) pros.push('Заявлено без ДТП (перевір товщиноміром)');
-  if (has(text, KEYWORDS.lpg) || /lpg/.test(l.fuel)) {
+  if (group === 'hybrid' && hasLpg) {
     pros.push('Газ: для гібрида Toyota ок — перевір документи, систему й компресію');
   }
   if (descKnown && (l.description || '').length < 80) { score -= 1; cons.push('Порожній/дуже короткий опис'); }
@@ -242,10 +305,11 @@ export function analyze(l, ctx = {}) {
   // ---------- вердикт ----------
   let verdict;
   if (suspicious) verdict = 'CAUTION';
-  else if (goodMake && !has(text, KEYWORDS.taxi) && score >= 4 && (!cost || cost.total <= TOTAL_BUDGET)) verdict = 'HOT';
+  else if (goodMake && !has(text, KEYWORDS.taxi) && score >= 4 &&
+    (group === 'hybrid' ? (!cost || cost.total <= TOTAL_BUDGET) : (!l.price || l.price <= G.targetPrice))) verdict = 'HOT';
   else verdict = 'LOOK';
 
-  return { verdict, kind, score, pros, cons, ref, live, basis, ratio, cost, skipReasons, skipCodes };
+  return { verdict, kind, group, score, pros, cons, ref, live, basis, ratio, cost, skipReasons, skipCodes };
 }
 
 export function fmt(n) {

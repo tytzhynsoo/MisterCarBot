@@ -36,40 +36,88 @@ export const NOTIFY_CAUTION = false;
 // Від скількох км від дому позначати оголошення як "далеко"
 export const FAR_DISTANCE_KM = 300;
 
-const COMMON_PARAMS = {
-  'search[filter_float_price:to]': String(BUDGET.maxPrice),
-  'search[filter_float_mileage:to]': String(BUDGET.maxMileage),
-  'search[filter_float_year:from]': String(BUDGET.minYear),
-  'search[order]': 'created_at_first:desc',
+// ---- Групи пошуку: у кожної свої ліміти й правила (analyze.js) ----
+// hybrid  — гібриди Toyota/Lexus (як і раніше; також OLX і Sprzedajemy)
+// bmw_b47 — BMW з дизелем B47 (2.0d), класичний автомат, будь-яка модель,
+//           і задньопривідні (ZF 8HP), і передньопривідні (Aisin 8AT)
+// v6_awd  — Dodge Journey / Fiat Freemont 3.6 Pentastar V6, повний привід,
+//           бензин+LPG або бензин (тоді ціна + установка ГБО ≤ maxPrice)
+export const GROUPS = {
+  hybrid: {
+    name: 'Гібриди',
+    maxPrice: BUDGET.maxPrice,
+    maxMileage: BUDGET.maxMileage,
+    minYear: BUDGET.minYear,
+  },
+  bmw_b47: {
+    name: 'BMW B47',
+    maxPrice: 43000,       // у оголошенні — із запасом на торг
+    targetPrice: 40000,    // ціль: забрати за стільки
+    maxMileage: 160000,    // жорсткий максимум
+    preferMileage: 150000, // бажано не більше
+    minYear: 2014,         // B47 зʼявився у 2014–2015 (раніше — N47)
+    firstService: 2500,    // масло, фільтри, ATF, гальмівна рідина (дизель BMW дорожчий)
+  },
+  v6_awd: {
+    name: 'Journey/Freemont 3.6 AWD',
+    maxPrice: 43000,
+    targetPrice: 40000,
+    maxMileage: BUDGET.maxMileage,
+    minYear: 2011,         // Pentastar 3.6 у Journey/Freemont — з 2011
+    firstService: 2000,    // масло, фільтри, ATF 62TE, свічки
+    lpgInstall: 5000,      // орієнтовно: послідовне ГБО на V6 (підправ під реальні пропозиції)
+  },
 };
 
 // Пошуки на Otomoto. path — частина адреси після /osobowe/
 // Без фільтра палива для Toyota — щоб не пропустити гібриди з газом
 // (Otomoto показує їх як "Benzyna+LPG"); негібриди відсіюють правила.
+// Якщо Otomoto проігнорує якийсь фільтр — не страшно: правила в analyze.js
+// все одно перевіряють паливо, обʼєм, коробку і пробіг.
+const HYBRID_MARKET = { 'search[filter_enum_fuel_type]': 'hybrid' };
+const BMW_PARAMS = {
+  'search[filter_enum_fuel_type]': 'diesel',
+  'search[filter_enum_gearbox]': 'automatic',
+  'search[filter_float_engine_capacity:from]': '1900',
+  'search[filter_float_engine_capacity:to]': '2100',
+};
+const V6_PARAMS = { 'search[filter_float_engine_capacity:from]': '3400' };
 export const SEARCHES = [
-  { name: 'Toyota Auris', path: 'toyota/auris', params: {} },
-  { name: 'Toyota Prius', path: 'toyota/prius', params: {} },
-  { name: 'Toyota Prius+', path: 'toyota/prius_plus', params: {} },
-  { name: 'Lexus CT', path: 'lexus/ct', params: {} },
+  { name: 'Toyota Auris', path: 'toyota/auris', params: {}, marketParams: HYBRID_MARKET },
+  { name: 'Toyota Prius', path: 'toyota/prius', params: {}, marketParams: HYBRID_MARKET },
+  { name: 'Toyota Prius+', path: 'toyota/prius_plus', params: {}, marketParams: HYBRID_MARKET },
+  { name: 'Lexus CT', path: 'lexus/ct', params: {}, marketParams: HYBRID_MARKET },
   {
     name: 'Інші гібриди',
     path: '',
     params: { 'search[filter_enum_fuel_type]': 'hybrid' },
   },
+  { name: 'BMW 2.0d автомат (B47)', group: 'bmw_b47', path: 'bmw', params: BMW_PARAMS, marketParams: BMW_PARAMS },
+  { name: 'Dodge Journey 3.6', group: 'v6_awd', path: 'dodge/journey', params: V6_PARAMS, marketParams: V6_PARAMS },
+  { name: 'Fiat Freemont 3.6', group: 'v6_awd', path: 'fiat/freemont', params: V6_PARAMS, marketParams: V6_PARAMS },
 ];
+
+export const groupOf = (x) => GROUPS[x?.group] ? x.group : 'hybrid';
 
 export function buildSearchUrl(search, { market = false, page = 1 } = {}) {
   const base = 'https://www.otomoto.pl/osobowe' + (search.path ? '/' + search.path : '');
+  const g = GROUPS[groupOf(search)];
   // Для "живих цін" — без обмеження ціни (інакше медіана буде занижена)
   const common = market
     ? {
         'search[filter_float_mileage:to]': '300000',
-        'search[filter_float_year:from]': String(BUDGET.minYear),
-        'search[filter_enum_fuel_type]': 'hybrid',
+        'search[filter_float_year:from]': String(g.minYear),
         'search[order]': 'created_at_first:desc',
+        ...(search.marketParams || {}),
       }
-    : COMMON_PARAMS;
-  const params = new URLSearchParams({ ...common, ...(market ? {} : search.params) });
+    : {
+        'search[filter_float_price:to]': String(g.maxPrice),
+        'search[filter_float_mileage:to]': String(g.maxMileage),
+        'search[filter_float_year:from]': String(g.minYear),
+        'search[order]': 'created_at_first:desc',
+        ...search.params,
+      };
+  const params = new URLSearchParams(common);
   if (page > 1) params.set('page', String(page));
   return `${base}?${params.toString()}`;
 }

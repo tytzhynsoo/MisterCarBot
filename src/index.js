@@ -24,7 +24,13 @@ const tg = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms + Math.floor(Math.random() * 1000)));
 const PRIORITY = { HOT: 0, CAUTION: 1, LOOK: 2, SKIP: 9 };
 const HOUR = 3600 * 1000;
-const SOURCE_NAMES = { otomoto: 'Otomoto', olx: 'OLX', sprzedajemy: 'Sprzedajemy.pl' };
+const SOURCE_NAMES = {
+  otomoto: 'Otomoto', olx: 'OLX', sprzedajemy: 'Sprzedajemy.pl',
+  'otomoto:bmw_b47': 'Пошук BMW B47 (Otomoto)', 'otomoto:v6_awd': 'Пошук Journey/Freemont 3.6 AWD (Otomoto)',
+};
+// "Стрічка" = джерело + група пошуку. Нова група — як нове джерело:
+// на першому запуску не засипаємо всіма старими оголошеннями, лише до 3 найкращих.
+const feedOf = (c) => (c.l.group && c.l.group !== 'hybrid' ? `${c.src}:${c.l.group}` : c.src);
 
 // ---- Режим перевірки парсера на збереженій сторінці ----
 async function parseFileMode(path, isDetail) {
@@ -81,7 +87,10 @@ async function collect(stats) {
       const found = parseSearchPage(await fetchHtml(buildSearchUrl(s)));
       console.log(`[${s.name}] знайдено: ${found.length}`);
       if (found.length) ok++;
-      for (const l of found) if (!all.has(l.id)) all.set(l.id, l);
+      for (const l of found) {
+        if (s.group) l.group = s.group;
+        if (!all.has(l.id)) all.set(l.id, l);
+      }
     } catch (e) {
       if (e instanceof BlockedError) blocked = true;
       stats.errors++;
@@ -187,7 +196,7 @@ async function main() {
     candidates.push({ l, src });
   }
   // Перший запуск джерела (напр. OLX щойно підключено): не засипаємо старими оголошеннями
-  const firstSources = new Set(testRun ? [] : candidates.map((c) => c.src).filter((s) => !state.sources[s]));
+  const firstSources = new Set(testRun ? [] : candidates.map(feedOf).filter((s) => !state.sources[s]));
   console.log(`Кандидатів: ${candidates.length} (знижень: ${candidates.filter((c) => c.drop).length})${firstSources.size ? `, перший запуск: ${[...firstSources]}` : ''}`);
 
   // ---- аналіз ----
@@ -212,7 +221,7 @@ async function main() {
     } else if (needDetail) {
       // ліміт сторінок за запуск. Для нового джерела — просто запамʼятовуємо (старі оголошення не шлемо),
       // інакше розберемо наступного запуску.
-      if (firstSources.has(c.src)) state.seen[listing.id] = { t: now, ls: now, price: listing.price, v: 'init' };
+      if (firstSources.has(feedOf(c))) state.seen[listing.id] = { t: now, ls: now, price: listing.price, v: 'init' };
       continue;
     }
     if (!a) continue;
@@ -261,10 +270,10 @@ async function main() {
     const bySrc = (src) => results.filter((r) => r.c.src === src).length;
     intro.push(`🧪 Тест фільтрів. Перевірено: ${results.length} (Otomoto ${bySrc('otomoto')}, OLX ${bySrc('olx')}, Sprzedajemy ${bySrc('sprzedajemy')}), відсіяно: ${skipped}. Нижче — до 5 найкращих.`);
   } else {
-    toSend = results.filter((r) => !firstSources.has(r.c.src) && wanted(r)).sort(byScore);
+    toSend = results.filter((r) => !firstSources.has(feedOf(r.c)) && wanted(r)).sort(byScore);
     for (const src of firstSources) {
-      const best = results.filter((r) => r.c.src === src && wanted(r)).sort(byScore).slice(0, 3);
-      const n = results.filter((r) => r.c.src === src).length;
+      const best = results.filter((r) => feedOf(r.c) === src && wanted(r)).sort(byScore).slice(0, 3);
+      const n = results.filter((r) => feedOf(r.c) === src).length;
       intro.push(`🤖 ${SOURCE_NAMES[src] || src} підключено: зараз ${n} оголошень за фільтрами. Нижче — до 3 найкращих, далі писатиму лише про нові та подешевшалі.`);
       toSend.push(...best);
     }
