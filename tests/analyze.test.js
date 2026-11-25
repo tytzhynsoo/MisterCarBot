@@ -162,3 +162,11 @@ test('Toyota 175 тис. км → SKIP (ліміт 170 тис.)', () => {
 test('Ціна 43 500 → не SKIP за ціною', () => {
   assert.ok(!analyze(base({ price: 43500 })).skipCodes?.includes('price'));
 });
+
+import { formatMessage } from '../src/telegram.js';
+test('BMW: у повідомленні питання про B47/ATF, не про батарею гібрида', () => {
+  const l = bmw();
+  const msg = formatMessage(l, analyze(l));
+  assert.match(msg, /B47\?/);
+  assert.doesNotMatch(msg, /тест батареї/);
+});

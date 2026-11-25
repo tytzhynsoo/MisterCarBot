@@ -77,7 +77,11 @@ export function formatMessage(l, a, extra = {}) {
     for (const c of a.cons) lines.push(`• ${esc(c)}`);
   }
   const ask = l.vin ? 'номер і дату 1-ї реєстрації' : 'VIN';
-  lines.push('', `📞 Спитай: ${ask}, чи не таксі, історію сервісу, тест батареї в ASO до купівлі.`);
+  const extraAsk = {
+    bmw_b47: 'код двигуна (B47?), коли міняли ATF, чи робили відклик EGR, стан DPF',
+    journey_v6: 'чи повний привід (AWD), тип і документи ГБО, коли міняли ATF',
+  }[a.kind] || 'тест батареї в ASO до купівлі';
+  lines.push('', `📞 Спитай: ${ask}, чи не таксі, історію сервісу, ${extraAsk}.`);
   if (l.url) lines.push(`🔗 ${esc(l.url)}`);
   return lines.join('\n');
 }

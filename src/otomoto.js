@@ -198,7 +198,8 @@ export function normalizeListing(raw) {
     year,
     mileage,
     fuel: fuel ? `${fuel.value} ${fuel.label}`.toLowerCase() : '',
-    fuelLabel: fuel?.label || '',
+    // на детальній сторінці label = "Rodzaj paliwa", а саме паливо — у value
+    fuelLabel: (fuel && !/rodzaj paliwa/i.test(fuel.label) ? fuel.label : fuel?.value) || '',
     gearbox: gearbox ? `${gearbox.value} ${gearbox.label}`.toLowerCase() : '',
     body: body ? `${body.value} ${body.label}`.toLowerCase() : '',
     engine,
