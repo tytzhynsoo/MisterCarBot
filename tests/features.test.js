@@ -31,16 +31,17 @@ test('VIN: справжній приймається, фейковий — ні'
 test('Повна сума: приватна особа з PCC, фірма без', () => {
   const p = purchaseCost({ price: 33000, sellerType: 'PRIVATE' });
   assert.equal(p.pcc, 660);
-  assert.equal(p.total, 33000 + 660 + 180 + 900 + 400 + 1500 + 1000);
+  assert.equal(p.total, 33000 + 660 + 180 + 900 + 400);
+  assert.equal(p.full, p.total + 1500 + 1000);
   assert.ok(p.over < 0);
   const b = purchaseCost({ price: 33000, sellerType: 'PROFESSIONAL' });
   assert.equal(b.pcc, 0);
-  assert.equal(purchaseCost({ price: 37000 }).seller, 'unknown');
-  assert.ok(purchaseCost({ price: 37000 }).over > 0);
+  assert.equal(purchaseCost({ price: 42000 }).seller, 'unknown');
+  assert.ok(purchaseCost({ price: 42000 }).over > 0);
 });
 
 test('Дорога машина понад бюджет "під ключ" → не HOT, порада торгуватися', () => {
-  const a = analyze(car({ price: 37500 }));
+  const a = analyze(car({ price: 42500 }));
   assert.notEqual(a.verdict, 'HOT');
   assert.ok(a.cons.some((c) => c.includes('Торгуйся до')));
 });
@@ -63,7 +64,7 @@ test('Аналіз показує і таблицю, і живу ціну', () =
   const msg = formatMessage(car(), a);
   assert.match(msg, /таблиця ~/);
   assert.match(msg, /живий ~36\s000/);
-  assert.match(msg, /Разом під ключ/);
+  assert.match(msg, /У день купівлі/);
 });
 
 const olxApi = {
@@ -98,7 +99,7 @@ test('OLX: розбір API, VIN, фото, CNG-не-гібрид відсіює
   assert.equal(prius.vin, 'JTDKN36U401234567');
   assert.equal(prius.photo, 'https://ireland.apollo.olxcdn.com/v1/files/abc/image;s=800x600');
   assert.equal(prius.city, 'Kraków');
-  assert.notEqual(analyze(prius).verdict, 'SKIP');
+  assert.notEqual(analyze({ ...prius, mileage: 160000 }).verdict, 'SKIP');
   const a = analyze(panda);
   assert.equal(a.verdict, 'SKIP');
   assert.ok(a.skipCodes.includes('notHybrid'));

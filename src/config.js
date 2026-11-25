@@ -2,8 +2,11 @@
 //  НАЛАШТУВАННЯ БОТА — тут міняєш фільтри, ціни й слова-тригери
 // ============================================================
 
-// Загальний бюджет "під ключ": авто + PCC + реєстрація + OC + діагностика + перше ТО + резерв
-export const TOTAL_BUDGET = 40000;
+// Бюджет (рішення 25.11.2026):
+// 43 000 — максимум у день купівлі: авто + PCC + реєстрація + OC + діагностика.
+// 45 000 — стеля разом із першим ТО і резервом (їх можна відкласти на кілька місяців).
+export const TOTAL_BUDGET = 43000;
+export const FULL_BUDGET = 45000;
 
 // Витрати при купівлі (zł). Перевірено в листопаді 2026:
 // реєстрація з новими номерами 180 zł (зі старими — 67 zł);
@@ -19,9 +22,15 @@ export const PURCHASE_COSTS = {
 
 export const BUDGET = {
   // Оголошення дорожчі за це — ігноруються повністю
-  maxPrice: 42000,
-  maxMileage: 230000,
+  maxPrice: 43500,   // ціна в оголошенні — із запасом під торг
+  maxMileage: 170000, // Toyota, Journey/Freemont та інші
   minYear: 2010,
+};
+
+// Окремі правила моделей (негібриди, які ми теж шукаємо)
+export const MODEL_RULES = {
+  bmw_b47: { maxMileage: 160000, minYear: 2015 },     // B47 2.0d; N47 до ~2015 відсіюємо
+  journey_v6: { maxMileage: 170000, minEngine: 3500 }, // лише 3.6 Pentastar, AWD
 };
 
 // Як часто бот може робити запити (мс між запитами до Otomoto)
@@ -56,6 +65,20 @@ export const SEARCHES = [
     path: '',
     params: { 'search[filter_enum_fuel_type]': 'hybrid' },
   },
+  // Негібриди: hybrid:false — не беруть участі в "живому ринку" гібридів
+  {
+    name: 'BMW 2.0d автомат', path: 'bmw', hybrid: false,
+    params: {
+      'search[filter_enum_fuel_type]': 'diesel',
+      'search[filter_enum_gearbox]': 'automatic',
+      'search[filter_float_year:from]': String(MODEL_RULES.bmw_b47.minYear),
+      'search[filter_float_mileage:to]': String(MODEL_RULES.bmw_b47.maxMileage),
+      'search[filter_float_engine_capacity:from]': '1900',
+      'search[filter_float_engine_capacity:to]': '2100',
+    },
+  },
+  { name: 'Dodge Journey 3.6', path: 'dodge/journey', hybrid: false, params: { 'search[filter_float_engine_capacity:from]': '3500' } },
+  { name: 'Fiat Freemont 3.6', path: 'fiat/freemont', hybrid: false, params: { 'search[filter_float_engine_capacity:from]': '3500' } },
 ];
 
 export function buildSearchUrl(search, { market = false, page = 1 } = {}) {

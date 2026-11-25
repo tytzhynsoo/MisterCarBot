@@ -10,6 +10,7 @@ import {
   GOOD_HYBRID_MAKES,
   GEARBOX_WARNINGS,
   TOTAL_BUDGET,
+  MODEL_RULES,
 } from './config.js';
 import { purchaseCost } from './costs.js';
 import { isNorthAmericanVin } from './vin.js';
@@ -26,7 +27,12 @@ export const SKIP_LABELS = {
   notInPL: 'ще не в Польщі',
   fakeMileage: 'хитрий пробіг',
   tooCheap: 'нереально дешеві',
+  notB47: 'BMW не B47 (бензин/інший двигун/N47)',
+  notV6: 'Journey/Freemont не 3.6 V6',
 };
+
+// Негібриди, які ми свідомо шукаємо
+const NON_HYBRID_KINDS = ['bmw_b47', 'journey_v6'];
 
 export const VERDICT = {
   HOT: '🔥 ДЗВОНИ ВЖЕ',
@@ -62,6 +68,8 @@ export function detectKind(l) {
   if (make === 'toyota' && /auris/.test(t)) return isCombi ? 'auris_ts' : 'auris_hatch';
   if (make === 'lexus' && /\bct\b|ct ?200|lexus-ct/.test(t)) return 'lexus_ct';
   if (make === 'toyota' || make === 'lexus') return 'other_toyota_hybrid';
+  if (make === 'bmw') return 'bmw_b47';
+  if (/journey|freemont/.test(t)) return 'journey_v6';
   return 'other_brand_hybrid';
 }
 
@@ -112,9 +120,18 @@ export function analyze(l, ctx = {}) {
 
   // ---------- жорсткі фільтри ----------
   if (l.price && l.price > BUDGET.maxPrice) skip('price', `ціна ${l.price} > ${BUDGET.maxPrice}`);
-  if (l.mileage && l.mileage > BUDGET.maxMileage) skip('mileage', `пробіг ${l.mileage} > ${BUDGET.maxMileage}`);
-  if (l.year && l.year < BUDGET.minYear) skip('year', `рік ${l.year} < ${BUDGET.minYear}`);
-  if (!isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
+  const rule = MODEL_RULES[kind] || {};
+  const maxKm = rule.maxMileage || BUDGET.maxMileage;
+  const minYear = rule.minYear || BUDGET.minYear;
+  if (l.mileage && l.mileage > maxKm) skip('mileage', `пробіг ${l.mileage} > ${maxKm}`);
+  if (l.year && l.year < minYear) skip('year', `рік ${l.year} < ${minYear}`);
+  const fuelText = `${l.fuel} ${l.fuelLabel}`.toLowerCase();
+  if (kind === 'bmw_b47') {
+    if (!/diesel|olej/.test(fuelText) || (l.engine && (l.engine < 1900 || l.engine > 2100))) skip('notB47', 'BMW не 2.0 дизель (не B47)');
+  } else if (kind === 'journey_v6') {
+    if (l.engine && l.engine < rule.minEngine) skip('notV6', `двигун ${l.engine} см³ — потрібен 3.6 V6`);
+    if (/\b(fwd|4x2)\b|napęd na przód|na przednie/.test(text)) skip('notV6', 'передній привід — потрібен AWD');
+  } else if (!isHybrid(l, kind)) skip('notHybrid', 'не гібрид');
   if (/manual/.test(l.gearbox)) skip('manual', 'механіка');
   if (l.damaged || has(text, KEYWORDS.damaged)) skip('damaged', 'пошкоджена');
   if (l.rhd || has(text, KEYWORDS.rhd)) skip('rhd', 'правий кермо');
@@ -133,7 +150,7 @@ export function analyze(l, ctx = {}) {
 
   // Модель без нашої ринкової таблиці (Camry, RAV4, C-HR…): новий гібрид за ≤42 тис. — майже напевно
   // побитий/з США. Відсіюємо, щоб не засмічував сповіщення.
-  if (!REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
+  if (!NON_HYBRID_KINDS.includes(kind) && !REFERENCE_PRICES[kind] && l.year && l.year >= 2018 && l.price && l.price <= BUDGET.maxPrice) {
     skip('tooCheap', `занадто дешево для ${l.year} р. — найімовірніше побитий або з США`);
   }
   if (skipReasons.length) return { verdict: 'SKIP', kind, skipReasons, skipCodes, pros, cons, score: 0 };
@@ -169,7 +186,7 @@ export function analyze(l, ctx = {}) {
   // ---------- повна сума покупки ----------
   const cost = purchaseCost(l);
   if (cost && cost.over > 0) {
-    cons.push(`Разом з усіма витратами ~${fmt(cost.total)} zł — на ${fmt(cost.over)} понад ${fmt(TOTAL_BUDGET)}. Торгуйся до ~${fmt(Math.floor((l.price - cost.over) / 100) * 100)} zł`);
+    cons.push(`Понад бюджет на ${fmt(cost.over)} zł (у день купівлі ~${fmt(cost.total)}, з ТО ~${fmt(cost.full)}). Торгуйся до ~${fmt(Math.floor((l.price - cost.over) / 100) * 100)} zł`);
   }
 
   // ---------- рік і пробіг ----------
@@ -194,8 +211,15 @@ export function analyze(l, ctx = {}) {
   }
 
   // ---------- марка / коробка ----------
-  const goodMake = GOOD_HYBRID_MAKES.includes(make);
-  if (goodMake) {
+  const goodMake = GOOD_HYBRID_MAKES.includes(make) || kind === 'bmw_b47';
+  if (kind === 'bmw_b47') {
+    pros.push('BMW 2.0d автомат: ZF 8HP (задній привід) або Aisin 8 (UKL) — ок');
+    cons.push('Перевір за VIN, що двигун саме B47, а не N47; підтвердь пробіг (historiapojazdu + OBD)');
+  } else if (kind === 'journey_v6') {
+    cons.push('Коробка 62TE: репутація неоднозначна — перевір ATF, перемикання, гідроблок; переконайся, що AWD');
+    if (has(text, KEYWORDS.lpg) || /lpg/.test(l.fuel)) { score += 1; pros.push('Є ГБО — для 3.6 V6 це плюс'); }
+    else cons.push('Без ГБО: витрата 3.6 V6 висока, закладай ГБО в бюджет');
+  } else if (goodMake) {
     pros.push('Гібрид Toyota/Lexus: надійна коробка e-CVT');
   } else {
     score -= 2;
@@ -223,7 +247,7 @@ export function analyze(l, ctx = {}) {
   if (has(text, KEYWORDS.polishSalon)) { score += 1; pros.push('Польський салон'); }
   if (has(text, KEYWORDS.firstOwner)) { score += 1; pros.push('Перший власник (заявлено)'); }
   if (l.noAccident) pros.push('Заявлено без ДТП (перевір товщиноміром)');
-  if (has(text, KEYWORDS.lpg) || /lpg/.test(l.fuel)) {
+  if (kind !== 'journey_v6' && (has(text, KEYWORDS.lpg) || /lpg/.test(l.fuel))) {
     pros.push('Газ: для гібрида Toyota ок — перевір документи, систему й компресію');
   }
   if (descKnown && (l.description || '').length < 80) { score -= 1; cons.push('Порожній/дуже короткий опис'); }

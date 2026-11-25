@@ -41,7 +41,7 @@ test('Auris 1.33 бензин → SKIP (не гібрид)', () => {
 });
 
 test('Prius+ з газом (Otomoto пише Benzyna+LPG) — визнається гібридом', () => {
-  const a = analyze(base({ title: 'Toyota Prius+ 1.8 HSD', url: 'https://www.otomoto.pl/osobowe/oferta/toyota-prius-plus-ID6Ixyz.html', fuel: 'petrol-lpg benzyna+lpg', fuelLabel: 'Benzyna+LPG', model: 'prius-plus', year: 2014, price: 38000, mileage: 190000 }));
+  const a = analyze(base({ title: 'Toyota Prius+ 1.8 HSD', url: 'https://www.otomoto.pl/osobowe/oferta/toyota-prius-plus-ID6Ixyz.html', fuel: 'petrol-lpg benzyna+lpg', fuelLabel: 'Benzyna+LPG', model: 'prius-plus', year: 2014, price: 38000, mileage: 160000 }));
   assert.equal(a.kind, 'prius_plus');
   assert.notEqual(a.verdict, 'SKIP');
 });
@@ -111,4 +111,54 @@ test('Зареєстрована в Польщі → плюс; без інфор
 test('"usatysfakcjonowany" не вважається США', () => {
   const a = analyze(base({ description: 'Będziesz usatysfakcjonowany, serwis ASO, zarejestrowany w Polsce. Auto zadbane.' }));
   assert.ok(!a.cons.some((c) => c.includes('США')));
+});
+
+const bmw = (o = {}) => base({
+  url: 'https://www.otomoto.pl/osobowe/oferta/bmw-seria-3-ID6Ibmw.html', title: 'BMW Seria 3 320d Touring', make: 'bmw', model: 'seria-3',
+  fuel: 'diesel olej napędowy', fuelLabel: 'Diesel', engine: 1995, year: 2016, mileage: 150000, price: 41000, ...o,
+});
+
+test('BMW 320d 2016 автомат → не SKIP', () => {
+  const a = analyze(bmw());
+  assert.equal(a.kind, 'bmw_b47');
+  assert.notEqual(a.verdict, 'SKIP');
+});
+
+test('BMW понад 160 тис. км → SKIP', () => {
+  assert.equal(analyze(bmw({ mileage: 165000 })).verdict, 'SKIP');
+});
+
+test('BMW 2014 (ризик N47) → SKIP', () => {
+  assert.equal(analyze(bmw({ year: 2014 })).verdict, 'SKIP');
+});
+
+test('BMW бензин → SKIP', () => {
+  assert.equal(analyze(bmw({ fuel: 'petrol benzyna', fuelLabel: 'Benzyna' })).verdict, 'SKIP');
+});
+
+const journey = (o = {}) => base({
+  url: 'https://www.otomoto.pl/osobowe/oferta/dodge-journey-ID6Ijrn.html', title: 'Dodge Journey 3.6 V6 AWD', make: 'dodge', model: 'journey',
+  fuel: 'petrol benzyna', fuelLabel: 'Benzyna', engine: 3604, year: 2012, mileage: 160000, price: 38000, ...o,
+});
+
+test('Journey 3.6 160 тис. → не SKIP', () => {
+  const a = analyze(journey());
+  assert.equal(a.kind, 'journey_v6');
+  assert.notEqual(a.verdict, 'SKIP');
+});
+
+test('Journey 2.4 → SKIP', () => {
+  assert.equal(analyze(journey({ engine: 2360, title: 'Dodge Journey 2.4' })).verdict, 'SKIP');
+});
+
+test('Journey 175 тис. км → SKIP', () => {
+  assert.equal(analyze(journey({ mileage: 175000 })).verdict, 'SKIP');
+});
+
+test('Toyota 175 тис. км → SKIP (ліміт 170 тис.)', () => {
+  assert.equal(analyze(base({ mileage: 175000 })).verdict, 'SKIP');
+});
+
+test('Ціна 43 500 → не SKIP за ціною', () => {
+  assert.ok(!analyze(base({ price: 43500 })).skipCodes?.includes('price'));
 });
